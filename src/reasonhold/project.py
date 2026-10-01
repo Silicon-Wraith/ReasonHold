@@ -63,7 +63,7 @@ class Project:
         if not isinstance(raw, dict):
             raise ManifestInvalid("'project' must be a mapping")
 
-        project_id = _slug(str(raw.get("id") or base.name))
+        project_id = slug(str(raw.get("id") or base.name))
         decisions_rel = raw.get("decisions")
         if not decisions_rel:
             legacy = manifest_path.name == "sync-doc.yaml" and (base / LEGACY_DECISIONS).is_file()
@@ -101,7 +101,7 @@ class Project:
         )
 
 
-def _slug(value: str) -> str:
+def slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     if not slug:
         raise ManifestInvalid("project id is empty after normalization")
