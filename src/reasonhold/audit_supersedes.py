@@ -45,11 +45,9 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from reasonhold.decisions_io import iter_decision_records
 
-from decisions_io import iter_decision_records  # noqa: E402
-
-from config import DECISIONS_FILE  # noqa: E402
+from reasonhold.config import DECISIONS_FILE
 
 # Language that suggests prior documentation stopped being true.
 RETRACTION_WORDS = (

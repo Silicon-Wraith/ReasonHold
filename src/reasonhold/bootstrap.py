@@ -28,11 +28,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from reasonhold.decisions_io import iter_supersedes_rows
 
-from decisions_io import iter_supersedes_rows  # noqa: E402
-
-from config import DECISIONS_FILE  # noqa: E402
+from reasonhold.config import DECISIONS_FILE
 
 # Display caps. The budget these serve is asserted in tests/test_bootstrap.py:
 # the whole preamble stays within 60 lines and 4KB, because it is paid for on
@@ -150,11 +148,10 @@ def render_role_c() -> str:
     omitted rather than rendered as an error, because a session start is a poor
     place to learn that `gh` is not installed.
     """
-    here = Path(__file__).resolve().parent
     lines = ["## Freshness", ""]
 
     rc, out, _ = _run(
-        [str(here / ".venv" / "bin" / "python"), str(here / "symbols.py"), "--freshness"], timeout=TIMEOUT_FRESHNESS
+        [sys.executable, str(Path(__file__).with_name("symbols.py")), "--freshness"], timeout=TIMEOUT_FRESHNESS
     )
     if out:
         lines.append(f"- Index: {out.splitlines()[0]}")

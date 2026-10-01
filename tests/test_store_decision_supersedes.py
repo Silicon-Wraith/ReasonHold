@@ -1,13 +1,10 @@
 """Tests for store_decision supersedes validation."""
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from server import _format_decision_content, _validate_supersedes
+from reasonhold.server import _format_decision_content, _validate_supersedes
 
 
 class TestValidateSupersedes:

@@ -13,16 +13,13 @@ corpus looks complete, and the missing documents are simply never retrieved.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import index as index_mod
-from index import index_file
-from manifest import AreaManifest, Manifest
+import reasonhold.index as index_mod
+from reasonhold.index import index_file
+from reasonhold.manifest import AreaManifest, Manifest
 
 
 class _Err:

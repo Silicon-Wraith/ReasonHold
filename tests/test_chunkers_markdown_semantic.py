@@ -1,12 +1,9 @@
 """Tests for semantic markdown chunking."""
 
-import sys
 import textwrap
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from chunkers import chunk_markdown
+from reasonhold.chunkers import chunk_markdown
 
 
 class TestSemanticMarkdownChunker:

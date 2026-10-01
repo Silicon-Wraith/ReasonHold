@@ -3,7 +3,7 @@
 import weaviate
 import weaviate.classes.config as wvc
 
-from config import (
+from reasonhold.config import (
     COLLECTION_NAME,
     EMBEDDING_DIMS,
     WEAVIATE_GRPC_PORT,

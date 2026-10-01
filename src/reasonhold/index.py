@@ -13,16 +13,16 @@ import ollama as ollama_client
 import weaviate
 import weaviate.classes.data as wvd
 import weaviate.classes.query as wvq
-from chunkers import CHUNKER_MAP
+from reasonhold.chunkers import CHUNKER_MAP
 
 # Re-exported for callers that still import them from here. iter_decision_records
 # is unused in this module by design — it is part of the public surface, not dead.
-from decisions_io import iter_decision_records, iter_supersedes_rows  # noqa: F401
-from enrichment import enrich_chunk, render_embedding_text
-from manifest import Manifest, load_manifest
-from schema import ensure_collection, get_client
+from reasonhold.decisions_io import iter_decision_records, iter_supersedes_rows  # noqa: F401
+from reasonhold.enrichment import enrich_chunk, render_embedding_text
+from reasonhold.manifest import Manifest, load_manifest
+from reasonhold.schema import ensure_collection, get_client
 
-from config import (
+from reasonhold.config import (
     COLLECTION_NAME,
     DECISIONS_FILE,
     EMBEDDING_BATCH_SIZE,

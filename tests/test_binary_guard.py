@@ -14,15 +14,12 @@ as a guarantee.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from index import detect_file_type, index_file, is_binary_file
-from manifest import AreaManifest, Manifest
+from reasonhold.index import detect_file_type, index_file, is_binary_file
+from reasonhold.manifest import AreaManifest, Manifest
 
 # Real PDF magic followed by binary. Decodes to ~50% U+FFFD under errors="replace".
 PDF_BYTES = b"%PDF-1.4\n" + bytes(range(256)) * 200
@@ -80,7 +77,7 @@ class TestBinaryDetection:
 class TestIndexFileRefusesBinary:
     def test_pdf_produces_no_chunks(self, tmp_path, manifest, monkeypatch):
         """A widened glob must not be able to put mojibake in the index."""
-        import index as index_mod
+        import reasonhold.index as index_mod
 
         monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
         pdf = tmp_path / "fixture.pdf"
@@ -98,7 +95,7 @@ class TestIndexFileRefusesBinary:
 
     def test_markdown_still_indexes(self, tmp_path, manifest, monkeypatch):
         """The guard must not suppress the corpus it exists to protect."""
-        import index as index_mod
+        import reasonhold.index as index_mod
 
         monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
         md = tmp_path / "design.md"

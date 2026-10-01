@@ -27,13 +27,10 @@ what would catch it.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import index as index_mod
-import schema as schema_mod
+import reasonhold.index as index_mod
+import reasonhold.schema as schema_mod
 import weaviate.classes.config as wvc
 
 

@@ -3,8 +3,10 @@
 import os
 from pathlib import Path
 
-# Project root (one level up from docs-rag/)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Project root: the repository being indexed. Seed behavior assumed the tool was
+# vendored one level below the root; the package reads it from the environment
+# or the current directory instead. Task 3 replaces this module entirely.
+PROJECT_ROOT = Path(os.getenv("REASONHOLD_ROOT", os.getcwd())).resolve()
 SYNC_DOC_PATH = PROJECT_ROOT / "sync-doc.yaml"
 
 # Weaviate-Docs connection
@@ -36,4 +38,4 @@ EXCLUDED_PATH_PARTS = {
 COLLECTION_NAME = "AriadneDoc"
 
 # Decision store
-DECISIONS_FILE = Path(__file__).resolve().parent / "decisions.jsonl"
+DECISIONS_FILE = PROJECT_ROOT / os.getenv("REASONHOLD_DECISIONS", "docs-rag/decisions.jsonl")

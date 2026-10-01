@@ -26,10 +26,10 @@ import sys
 import ollama as ollama_client
 import weaviate
 import weaviate.classes.query as wvq
-from schema import ensure_collection, get_client
-from server import _format_decision_content
+from reasonhold.schema import ensure_collection, get_client
+from reasonhold.server import _format_decision_content
 
-from config import (
+from reasonhold.config import (
     COLLECTION_NAME,
     DECISIONS_FILE,
     EMBEDDING_CHAR_BUDGET,

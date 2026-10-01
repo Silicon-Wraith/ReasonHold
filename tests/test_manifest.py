@@ -1,14 +1,11 @@
 """Tests for manifest-driven retrieval scope."""
 
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from manifest import load_manifest
+from reasonhold.manifest import load_manifest
 
 
 class TestManifest:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
-from manifest import Manifest
+from reasonhold.manifest import Manifest
 
 
 def enrich_chunk(chunk: dict[str, object], manifest: Manifest) -> dict[str, object]:

@@ -1,13 +1,11 @@
 """Tests for structure-aware chunkers."""
 
-import sys
 import textwrap
 from pathlib import Path
 
 # Add parent directory to path so we can import chunkers
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from chunkers import chunk_markdown, chunk_python, chunk_sql, chunk_yaml
+from reasonhold.chunkers import chunk_markdown, chunk_python, chunk_sql, chunk_yaml
 
 
 class TestMarkdownChunker:

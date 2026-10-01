@@ -25,7 +25,7 @@ import weaviate
 import weaviate.classes.query as wvq
 from fastmcp import FastMCP
 
-from config import (
+from reasonhold.config import (
     COLLECTION_NAME,
     DECISIONS_FILE,
     EMBEDDING_MODEL,

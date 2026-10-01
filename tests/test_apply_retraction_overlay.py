@@ -1,16 +1,13 @@
 """Tests for apply_retraction_to_chunks filtering and update behavior."""
 
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 pytest.importorskip("weaviate")
 
-from server import apply_retraction_to_chunks
+from reasonhold.server import apply_retraction_to_chunks
 
 
 @dataclass

@@ -1,13 +1,10 @@
 """Tests for deterministic enrichment and embedding text rendering."""
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import pytest
-from enrichment import _classify_authority, enrich_chunk, render_embedding_text
-from manifest import AreaManifest, Manifest
+from reasonhold.enrichment import _classify_authority, enrich_chunk, render_embedding_text
+from reasonhold.manifest import AreaManifest, Manifest
 
 
 class TestEnrichment:
@@ -120,7 +117,7 @@ class TestAuthorityWeightsCoverTheLadder:
     ladder silently flattens to 0.0 at query time."""
 
     def test_every_emitted_level_has_a_weight(self):
-        from server import AUTHORITY_WEIGHTS
+        from reasonhold.server import AUTHORITY_WEIGHTS
 
         emitted = {
             _classify_authority(path)[0]
@@ -140,7 +137,7 @@ class TestAuthorityWeightsCoverTheLadder:
         assert not missing, f"authority levels with no rank: {missing}"
 
     def test_precedence_order_matches_agents_md(self):
-        from server import AUTHORITY_WEIGHTS
+        from reasonhold.server import AUTHORITY_WEIGHTS
 
         assert (
             AUTHORITY_WEIGHTS["architecture"]

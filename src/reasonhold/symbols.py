@@ -42,9 +42,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from manifest import load_manifest
+from reasonhold.manifest import load_manifest
 
-from config import COLLECTION_NAME, PROJECT_ROOT
+from reasonhold.config import COLLECTION_NAME, PROJECT_ROOT
 
 # Properties a check ever needs. Narrowing the projection keeps whole-corpus
 # passes cheap; content is deliberately absent, since a symbol query wants
@@ -238,7 +238,7 @@ def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
     index.py is imported lazily: it pulls in Ollama, Weaviate, and the
     chunkers, none of which the pure helpers above need to be testable.
     """
-    from index import gather_files
+    from reasonhold.index import gather_files
 
     mtimes: dict[str, datetime] = {}
     empty: set[str] = set()
@@ -252,13 +252,13 @@ def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
 
 
 def indexed_mtimes(collection) -> dict[str, object]:
-    from index import get_indexed_mtimes
+    from reasonhold.index import get_indexed_mtimes
 
     return get_indexed_mtimes(collection)
 
 
 def _open_collection():
-    from schema import get_client
+    from reasonhold.schema import get_client
 
     client = get_client()
     return client, client.collections.get(COLLECTION_NAME)
@@ -317,8 +317,6 @@ def main() -> int:
         parser.error("--freshness and --inventory are separate modes")
     if not any(modes) and not any([args.chunk_type, args.file_type, args.area, args.file_prefix]):
         parser.error("give a filter (--chunk-type/--file-type/--area/--file-prefix), --inventory, or --freshness")
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     client, collection = _open_collection()
     try:
         if args.freshness:

@@ -1,12 +1,9 @@
 """Tests for JSONL decision chunker."""
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from chunkers import chunk_decisions
+from reasonhold.chunkers import chunk_decisions
 
 
 class TestDecisionChunker:

@@ -18,13 +18,11 @@ answer. Both are pinned below.
 
 from __future__ import annotations
 
-import sys
+import reasonhold.symbols as reasonhold_symbols
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from symbols import (
+from reasonhold.symbols import (
     FreshnessReport,
     coerce_mtime,
     compare_freshness,
@@ -206,7 +204,7 @@ class TestQueryPathIsExact:
     BANNED = ("near_vector", "near_text", "hybrid", "bm25", "generate")
 
     def test_source_contains_no_ranked_search_call(self):
-        source = (Path(__file__).parent.parent / "symbols.py").read_text()
+        source = (Path(reasonhold_symbols.__file__)).read_text()
 
         found = [term for term in self.BANNED if term in source]
 
@@ -217,7 +215,7 @@ class TestQueryPathIsExact:
         )
 
     def test_source_uses_property_filters_and_iterator(self):
-        source = (Path(__file__).parent.parent / "symbols.py").read_text()
+        source = (Path(reasonhold_symbols.__file__)).read_text()
 
         assert "by_property" in source, "symbols.py does not filter by property"
         assert "iterator(" in source, "symbols.py does not use iterator(), so recall is not total"

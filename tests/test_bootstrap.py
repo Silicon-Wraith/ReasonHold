@@ -18,14 +18,12 @@ overlay built on top of it.
 
 from __future__ import annotations
 
-import sys
+import reasonhold.bootstrap as reasonhold_bootstrap
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from bootstrap import SupersedesRow, load_active_supersedes, render_role_a
+from reasonhold.bootstrap import SupersedesRow, load_active_supersedes, render_role_a
 
 FIXTURE = Path(__file__).parent / "fixtures" / "decisions_sample.jsonl"
 
@@ -118,7 +116,7 @@ class TestSharedParsing:
         would be wrong and would have to be relaxed later, which is how a guard
         stops guarding.
         """
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "iter_supersedes_rows" in source, "bootstrap.py must reuse index.py's shared supersedes parse"
         assert "open(" not in source, (
             "bootstrap.py opens a file directly; the decisions scan is delegated "
@@ -130,12 +128,12 @@ class TestSharedParsing:
         `decisions_file: Path = DECISIONS_FILE)` and failed on correct code.
         A guard that fires on legitimate use gets relaxed, and then guards nothing.
         """
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "= DECISIONS_FILE" in source, "the default argument is expected here"
 
     def test_overlay_still_collapses_by_path(self):
         """index.py's own behaviour must be unchanged by the refactor."""
-        from index import load_retraction_overlay
+        from reasonhold.index import load_retraction_overlay
 
         overlay = load_retraction_overlay(FIXTURE)
         assert overlay["docs/architecture/alpha.md"]["retraction_decision"] == "second-retraction-same-path", (
@@ -149,26 +147,25 @@ class TestRoleCFreshness:
 
     def test_freshness_comes_from_symbols_not_an_ad_hoc_check(self):
         """One definition of 'is the index current', shared with /sync-docs."""
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "symbols.py" in source and "--freshness" in source
 
     def test_no_current_focus_file_is_read(self):
         """Nebulon's preamble reads one; Ariadne has no equivalent and does not invent one."""
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "CURRENT_FOCUS" not in source
 
     def test_recent_decisions_are_capped(self):
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "LAST_N_DECISIONS = 15" in source
 
     def test_recent_commits_are_capped(self):
-        source = (Path(__file__).parent.parent / "bootstrap.py").read_text()
+        source = (Path(reasonhold_bootstrap.__file__)).read_text()
         assert "LAST_N_COMMITS = 10" in source
 
     def test_a_failing_subprocess_degrades_to_one_line(self, monkeypatch):
         """No gh, no git, no index — the preamble still renders."""
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         monkeypatch.setattr(bootstrap, "_run", lambda *a, **k: (127, "", "not found"))
         out = bootstrap.render_role_c()
         assert out, "role C vanished entirely instead of degrading"
@@ -176,8 +173,7 @@ class TestRoleCFreshness:
 
     def test_empty_pr_list_renders_no_pr_section(self, monkeypatch):
         """Ariadne has opened no PRs. An empty section is still noise."""
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         monkeypatch.setattr(bootstrap, "_run", lambda *a, **k: (0, "", ""))
         assert "Open PRs" not in bootstrap.render_role_c()
 
@@ -194,8 +190,7 @@ class TestPreambleBudget:
     MAX_BYTES = 4096
 
     def test_full_preamble_is_within_budget(self):
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         out = bootstrap.render_preamble()
         assert len(out.splitlines()) <= self.MAX_LINES, (
             f"preamble is {len(out.splitlines())} lines, budget {self.MAX_LINES}"
@@ -204,8 +199,7 @@ class TestPreambleBudget:
 
     def test_budget_holds_with_a_full_role_a_table(self, monkeypatch):
         """The worst realistic case: ROLE_A_MAX_ROWS retractions, each verbose."""
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         rows = [
             bootstrap.SupersedesRow(
                 date="2026-08-19T00:00:00+00:00",
@@ -230,8 +224,7 @@ class TestTimeoutBudget:
     """A hook that outlives its own timeout looks exactly like a hung session start."""
 
     def test_worst_case_sum_is_under_the_hook_timeout(self):
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         HOOK_TIMEOUT = 20
         assert bootstrap.TIMEOUT_TOTAL_BUDGET < HOOK_TIMEOUT, (
             f"worst-case subprocess time {bootstrap.TIMEOUT_TOTAL_BUDGET}s meets or "
@@ -239,12 +232,10 @@ class TestTimeoutBudget:
         )
 
     def test_and_well_under_the_30s_design_cap(self):
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         assert bootstrap.TIMEOUT_TOTAL_BUDGET < 30
 
     def test_the_network_call_is_the_tightest(self):
         """gh hits GitHub; the design says the preamble must not block on network."""
-        import bootstrap
-
+        import reasonhold.bootstrap as bootstrap
         assert bootstrap.TIMEOUT_GH <= bootstrap.TIMEOUT_FRESHNESS

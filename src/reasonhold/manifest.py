@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from config import DECISIONS_FILE, PROJECT_ROOT, SYNC_DOC_PATH
+from reasonhold.config import DECISIONS_FILE, PROJECT_ROOT, SYNC_DOC_PATH
 
 
 @dataclass(frozen=True)

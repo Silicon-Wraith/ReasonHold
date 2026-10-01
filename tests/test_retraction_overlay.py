@@ -1,12 +1,9 @@
 """Tests for retraction overlay construction and matching in the indexer."""
 
 import json
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from index import load_retraction_overlay, retraction_for_chunk
+from reasonhold.index import load_retraction_overlay, retraction_for_chunk
 
 
 def _write_records(tmp_path, records):
