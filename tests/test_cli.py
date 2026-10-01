@@ -95,3 +95,16 @@ def test_candidates_list_promote_reject(tmp_path, cli):
 def test_preamble_always_exits_zero(tmp_path, cli):
     code, out, _ = cli("--root", str(tmp_path), "preamble", "--format", "claude-hook")
     assert code == 0 and json.loads(out)["hookSpecificOutput"]["hookEventName"] == "SessionStart"
+
+
+def test_json_index_output_is_parseable(tmp_path, cli):
+    root = make_repo(tmp_path / "r")
+    code, out, _ = cli("--root", str(root), "--json", "index")
+    assert code == 0 and "full" in json.loads(out)
+
+
+def test_init_with_unusable_directory_name_exits_2(tmp_path, cli):
+    bad = tmp_path / "___"
+    bad.mkdir()
+    code, _, err = cli("--root", str(bad), "init")
+    assert code == 2 and err.startswith("reasonhold:")

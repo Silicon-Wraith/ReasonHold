@@ -9,7 +9,7 @@ from reasonhold import preamble as preamble_mod
 from reasonhold.authority import level_weights
 from reasonhold.decisions import DecisionLog
 from reasonhold.embedding import check_model, make_provider
-from reasonhold.errors import IndexMissing, StoreUnavailable
+from reasonhold.errors import IndexMissing, ModelMismatch, StoreUnavailable
 from reasonhold.pending import PendingLog
 from reasonhold.project import Project
 from reasonhold.store import connect as store_connect
@@ -118,12 +118,18 @@ class ReasonHold:
                 collection = self.client.collections.get(state.collection)
         except StoreUnavailable as exc:
             warnings.append(f"index not updated: {exc}")
+        except ModelMismatch as exc:
+            collection = None
+            warnings.append(f"index not updated: {exc}; run `reasonhold index --full`")
         out = writes.store_decision(self.project, collection, self.provider, **kwargs)
         out["warnings"] = warnings + out["warnings"]
         if out["indexed"] and state is not None and state.meta is not None and not state.rebuild:
-            meta = read_meta(self.client, state.collection)
-            meta.retraction_sha256 = DecisionLog.load(self.project.decisions_path).retraction_sha256()
-            write_meta(self.client, state.collection, meta)
+            try:
+                meta = read_meta(self.client, state.collection)
+                meta.retraction_sha256 = DecisionLog.load(self.project.decisions_path).retraction_sha256()
+                write_meta(self.client, state.collection, meta)
+            except Exception as exc:  # the decision is already recorded
+                out["warnings"].append(f"index metadata not refreshed: {exc}")
         return out
 
     def propose_binding(self, **kwargs):

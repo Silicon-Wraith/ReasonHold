@@ -91,3 +91,13 @@ def test_curate_and_preamble_through_the_facade(tmp_path):
     git(root, "mv", "docs/specs/worker.md", "docs/specs/w2.md")
     assert [e["old_path"] for e in rh.curate(dry_run=True)["edits"]] == ["docs/specs/worker.md"]
     assert "fresh" in rh.preamble() or "stale" in rh.preamble()
+
+
+def test_store_decision_with_model_mismatch_still_appends(tmp_path):
+    root = make_repo(tmp_path / "r")
+    rh, client = rh_for(root)
+    rh.index(out=QUIET)
+    other, _ = rh_for(root, client, FakeProvider(dims=8))
+    out = other.store_decision(topic="t", decision="d", rationale="r", provenance=HUMAN)
+    assert out["indexed"] is False and any("index --full" in w for w in out["warnings"])
+    assert (root / "decisions.jsonl").read_text().count("\n") == 1

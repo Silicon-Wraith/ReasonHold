@@ -134,6 +134,10 @@ def _decide_kwargs(args) -> dict:
     }
 
 
+def _progress(*a) -> None:
+    print(*a, file=sys.stderr)
+
+
 def _print(value, as_json: bool) -> None:
     if as_json:
         print(json.dumps(value, indent=2, sort_keys=True, default=str))
@@ -153,14 +157,6 @@ def main(argv=None, *, factory=None) -> int:
         text = render_preamble(root)
         print(claude_hook_json(text) if args.format == "claude-hook" else text, end="" if args.format == "text" else "\n")
         return 0
-    if args.command == "init":
-        if any((root / n).exists() for n in MANIFEST_NAMES) and not args.force:
-            print("reasonhold: a manifest already exists here (use --force to overwrite)", file=sys.stderr)
-            return 2
-        (root / "reasonhold.yaml").write_text(scaffold_manifest(root))
-        (root / "decisions.jsonl").touch()
-        print("wrote reasonhold.yaml and decisions.jsonl; review the manifest, then run `reasonhold check`")
-        return 0
     if args.command == "mcp":
         from reasonhold.mcp_server import serve
 
@@ -168,6 +164,14 @@ def main(argv=None, *, factory=None) -> int:
         return 0
 
     try:
+        if args.command == "init":
+            if any((root / n).exists() for n in MANIFEST_NAMES) and not args.force:
+                print("reasonhold: a manifest already exists here (use --force to overwrite)", file=sys.stderr)
+                return 2
+            (root / "reasonhold.yaml").write_text(scaffold_manifest(root))
+            (root / "decisions.jsonl").touch()
+            print("wrote reasonhold.yaml and decisions.jsonl; review the manifest, then run `reasonhold check`")
+            return 0
         from reasonhold.api import ReasonHold
 
         rh = (factory or ReasonHold)(root)
@@ -190,7 +194,7 @@ def _dispatch(rh, args) -> int:
         ) or "ok", j)
         return 1 if any(p["severity"] == "error" for p in problems) else 0
     if cmd == "index":
-        _print(rh.index(full=args.full, dry_run=args.dry_run, areas=args.area), j)
+        _print(rh.index(full=args.full, dry_run=args.dry_run, areas=args.area, out=_progress), j)
         return 0
     if cmd == "curate":
         _print(rh.curate(dry_run=args.dry_run), j)
@@ -203,7 +207,7 @@ def _dispatch(rh, args) -> int:
         _print(rh.inventory(), j)
         return 0
     if cmd == "gc":
-        _print(rh.gc(yes=args.yes), j)
+        _print(rh.gc(yes=args.yes, out=_progress), j)
         return 0
     if cmd == "search":
         _print(rh.search_docs(args.query, args.top_k), j)
