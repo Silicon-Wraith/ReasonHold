@@ -122,7 +122,9 @@ class TestAuthorityWeightsCoverTheLadder:
     ladder silently flattens to 0.0 at query time."""
 
     def test_every_emitted_level_has_a_weight(self):
-        from reasonhold.server import AUTHORITY_WEIGHTS
+        from reasonhold.authority import DEFAULT_LADDER, level_weights
+
+        AUTHORITY_WEIGHTS = level_weights(DEFAULT_LADDER)
 
         emitted = {
             _classify_authority(path)[0]
@@ -142,7 +144,9 @@ class TestAuthorityWeightsCoverTheLadder:
         assert not missing, f"authority levels with no rank: {missing}"
 
     def test_precedence_order_matches_agents_md(self):
-        from reasonhold.server import AUTHORITY_WEIGHTS
+        from reasonhold.authority import DEFAULT_LADDER, level_weights
+
+        AUTHORITY_WEIGHTS = level_weights(DEFAULT_LADDER)
 
         assert (
             AUTHORITY_WEIGHTS["architecture"]

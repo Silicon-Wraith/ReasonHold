@@ -27,6 +27,8 @@ from fastmcp import FastMCP
 
 from reasonhold.decisions import format_decision_content as _format_decision_content
 from reasonhold.decisions import validate_supersedes as _validate_supersedes
+from reasonhold.authority import DEFAULT_LADDER, level_weights
+from reasonhold.search import _detect_query_intents, _rerank_docs  # noqa: F401
 from reasonhold.writes import apply_retraction_to_chunks
 from reasonhold.config import (
     COLLECTION_NAME,
@@ -58,172 +60,11 @@ def _get_client() -> weaviate.WeaviateClient:
 
 _ollama = ollama_client.Client(host=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}")
 
-# Reranking is intentionally lightweight and additive. The base vector score
-# remains primary, while these adjustments correct common systematic errors:
-# authoritative specs should beat manifests for conceptual queries, source code
-# should beat tests for exact symbols, and decision records should surface for
-# rationale/history questions.
-AUTHORITY_WEIGHTS = {
-    # Ordered by the documentation precedence in AGENTS.md: architecture
-    # governs specs, specs govern plans, plans describe how src was built.
-    "architecture": 0.08,
-    "implementation-spec": 0.06,
-    "implementation-plan": 0.05,
-    "design": 0.04,
-    "project-guidance": 0.03,
-    "deployment": 0.02,
-    "implementation": 0.0,
-    "decision": 0.0,
-    "review": 0.0,
-    "reference": -0.02,
-    "tooling": -0.04,
-    "project-manifest": -0.06,
-    "test": -0.05,
-}
-
-DOCUMENT_KIND_WEIGHTS = {
-    "sync_doc_manifest": -0.04,
-    "architecture_doc": 0.03,
-    "simulator_design_doc": 0.03,
-    "implementation_spec": 0.03,
-    "decision_log": 0.0,
-    "source_code": 0.0,
-    "test_code": 0.0,
-}
-
-QUERY_INTENT_PATTERNS = {
-    "decision": [
-        r"\bdecision\b",
-        r"\bwhy did\b",
-        r"\bwhy do\b",
-        r"\bchosen\b",
-        r"\bchoice\b",
-        r"\brationale\b",
-        r"\bsuperseded\b",
-        r"\btradeoff\b",
-        r"\btrade-off\b",
-    ],
-    "conceptual": [
-        r"\bordering\b",
-        r"\blifecycle\b",
-        r"\barchitecture\b",
-        r"\bdesign\b",
-        r"\bspec\b",
-        r"\bscope\b",
-        r"\bpurpose\b",
-        r"\bmust-do\b",
-        r"\bmust not\b",
-        r"\bcriteria\b",
-        r"\bbehavior\b",
-    ],
-    "symbol": [
-        r"\b[A-Z][A-Za-z0-9_]+\b",
-        r"\binterface\b",
-        r"\bclass\b",
-        r"\bmethod\b",
-        r"\bproperty\b",
-        r"\bexception\b",
-        r"\bdecorator\b",
-        r"\bpolicy\b",
-    ],
-}
-
-DECISION_INTENT_WEIGHTS = {
-    "decision_log": 0.14,
-}
-
-CONCEPTUAL_INTENT_WEIGHTS = {
-    "markdown_section": 0.05,
-    "authoritative_docs": 0.04,
-    "implementation_docs_penalty": -0.03,
-}
-
-SYMBOL_INTENT_WEIGHTS = {
-    "csharp_chunk": 0.05,
-    "test_code_penalty": -0.02,
-    "decision_log_penalty": -0.03,
-    "implementation_bonus": 0.01,
-}
-
-EXACT_MATCH_WEIGHTS = {
-    "type_name": 0.10,
-    "member_name": 0.08,
-    "section_heading_contains": 0.03,
-    "file_path_contains": 0.02,
-}
-
+AUTHORITY_WEIGHTS = level_weights(DEFAULT_LADDER)
 
 def _embed_query(query: str) -> list[float]:
     response = _ollama.embed(model=EMBEDDING_MODEL, input=[query])
     return response["embeddings"][0]
-
-
-def _detect_query_intents(query: str) -> dict[str, float]:
-    normalized = query.strip().lower()
-    intents = {"decision": 0.0, "conceptual": 0.0, "symbol": 0.0}
-    for intent, patterns in QUERY_INTENT_PATTERNS.items():
-        for pattern in patterns:
-            haystack = query if intent == "symbol" and "[A-Z]" in pattern else normalized
-            if re.search(pattern, haystack):
-                intents[intent] = 1.0
-                break
-    return intents
-
-
-def _rerank_docs(query: str, results: list[dict]) -> list[dict]:
-    query_intents = _detect_query_intents(query)
-    for result in results:
-        result["rerank_score"] = round(_rerank_score(query, query_intents, result), 4)
-    results.sort(key=lambda item: item["rerank_score"], reverse=True)
-    return results
-
-
-def _rerank_score(query: str, query_intents: dict[str, float], result: dict) -> float:
-    score = float(result.get("score", 0.0))
-    authority = str(result.get("authority_level", ""))
-    document_kind = str(result.get("document_kind", ""))
-    chunk_type = str(result.get("chunk_type", ""))
-    file_path = str(result.get("file_path", ""))
-    section_heading = str(result.get("section_heading", ""))
-    type_name = str(result.get("type_name", ""))
-    member_name = str(result.get("member_name", ""))
-
-    score += AUTHORITY_WEIGHTS.get(authority, 0.0)
-    score += DOCUMENT_KIND_WEIGHTS.get(document_kind, 0.0)
-
-    if query_intents.get("decision") and document_kind == "decision_log":
-        score += DECISION_INTENT_WEIGHTS["decision_log"]
-
-    if query_intents.get("conceptual"):
-        if chunk_type == "markdown_section":
-            score += CONCEPTUAL_INTENT_WEIGHTS["markdown_section"]
-        if document_kind in {"architecture_doc", "simulator_design_doc", "implementation_spec"}:
-            score += CONCEPTUAL_INTENT_WEIGHTS["authoritative_docs"]
-        if document_kind in {"source_code", "test_code", "sync_doc_manifest"}:
-            score += CONCEPTUAL_INTENT_WEIGHTS["implementation_docs_penalty"]
-
-    if query_intents.get("symbol"):
-        if chunk_type.startswith("csharp"):
-            score += SYMBOL_INTENT_WEIGHTS["csharp_chunk"]
-        if document_kind == "test_code":
-            score += SYMBOL_INTENT_WEIGHTS["test_code_penalty"]
-        if document_kind == "decision_log":
-            score += SYMBOL_INTENT_WEIGHTS["decision_log_penalty"]
-        if authority == "implementation":
-            score += SYMBOL_INTENT_WEIGHTS["implementation_bonus"]
-
-    exact_query = query.strip()
-    lowered_query = exact_query.lower()
-    if type_name and type_name.lower() == lowered_query:
-        score += EXACT_MATCH_WEIGHTS["type_name"]
-    if member_name and member_name.lower() == lowered_query:
-        score += EXACT_MATCH_WEIGHTS["member_name"]
-    if section_heading and lowered_query in section_heading.lower():
-        score += EXACT_MATCH_WEIGHTS["section_heading_contains"]
-    if lowered_query in file_path.lower():
-        score += EXACT_MATCH_WEIGHTS["file_path_contains"]
-
-    return score
 
 
 @mcp.tool()
@@ -448,7 +289,7 @@ def search_docs(query: str, top_k: int = 5) -> list[dict]:
                 result["retraction_date"] = obj.properties.get("retraction_date", "")
             output.append(result)
 
-        return _rerank_docs(query, output)
+        return _rerank_docs(query, output, AUTHORITY_WEIGHTS)
     finally:
         client.close()
 

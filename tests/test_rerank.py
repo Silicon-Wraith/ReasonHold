@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from reasonhold.server import _detect_query_intents, _rerank_docs
+from reasonhold.search import _detect_query_intents, _rerank_docs
 
 
 class TestRerank:

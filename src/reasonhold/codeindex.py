@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Exact symbol queries over the docs-rag index, for /sync-docs check procedures.
+"""The code-index seam: exact queries and freshness; the only module that reads code chunks,
+replaceable by a Serena adapter.
 
 Ariadne indexes source as well as documentation, and the chunkers emit
 structurally-typed chunks whose symbol names land in `section_heading`, a
@@ -19,32 +19,18 @@ Freshness lives here too, because an index-backed check reading a stale index
 reports on a snapshot — precisely the failure it exists to detect. Decision
 `substrate-checks-use-property-filters` makes it a precondition of the audit
 rather than a postscript to it.
-
-Usage:
-    python docs-rag/symbols.py --freshness
-    python docs-rag/symbols.py --chunk-type sql_function --names
-    python docs-rag/symbols.py --chunk-type sql_function \
-        --file-prefix src/database/postgres/triggers/ --names
-    python docs-rag/symbols.py --chunk-type python_function \
-        --file-prefix src/database/ --json
-    python docs-rag/symbols.py --inventory
-
-Exit codes: 0 clean, 1 the index is stale (--freshness only), 2 usage error.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
-import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reasonhold.manifest import load_manifest
+from reasonhold.errors import IndexMissing, IndexStale
 
-from reasonhold.config import COLLECTION_NAME, PROJECT_ROOT, SYNC_DOC_PATH
+CODE_FILE_TYPES = ("python", "csharp", "sql")
 
 # Properties a check ever needs. Narrowing the projection keeps whole-corpus
 # passes cheap; content is deliberately absent, since a symbol query wants
@@ -88,7 +74,7 @@ class FreshnessReport:
     def summary(self) -> str:
         note = f", {len(self.empty)} empty" if self.empty else ""
         if self.is_clean:
-            return f"FRESH — {self.fresh} files indexed and current{note}"
+            return f"FRESH: {self.fresh} files indexed and current{note}"
         parts = []
         if self.stale:
             parts.append(f"{len(self.stale)} stale")
@@ -96,7 +82,7 @@ class FreshnessReport:
             parts.append(f"{len(self.missing)} not indexed")
         if self.orphaned:
             parts.append(f"{len(self.orphaned)} orphaned")
-        return f"STALE — {', '.join(parts)} ({self.fresh} current{note})"
+        return f"STALE: {', '.join(parts)} ({self.fresh} current{note})"
 
 
 def coerce_mtime(value: object) -> datetime | None:
@@ -232,20 +218,17 @@ def chunk_type_inventory(collection) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
-def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
-    """Corpus mtimes and the set of 0-byte paths, from one pass over the tree.
+def is_code(result: dict) -> bool:
+    return result.get("file_type") in CODE_FILE_TYPES
 
-    indexer.py is imported lazily: it pulls in Weaviate and the
-    chunkers, none of which the pure helpers above need to be testable.
-    """
-    from reasonhold.config import DECISIONS_FILE, SYNC_DOC_PATH
-    from reasonhold.indexer import gather_files
 
-    globs = load_manifest(SYNC_DOC_PATH).iter_corpus_globs(extra=[DECISIONS_FILE.relative_to(PROJECT_ROOT).as_posix()])
+def scan_working_tree(project) -> tuple[dict[str, datetime], set[str]]:
+    from reasonhold.lifecycle import corpus_files
+
     mtimes: dict[str, datetime] = {}
     empty: set[str] = set()
-    for _file_type, path in gather_files(PROJECT_ROOT, globs, decisions_path=DECISIONS_FILE):
-        rel = str(path.relative_to(PROJECT_ROOT))
+    for _file_type, path in corpus_files(project):
+        rel = path.relative_to(project.root).as_posix()
         stat = path.stat()
         mtimes[rel] = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
         if stat.st_size == 0:
@@ -253,92 +236,42 @@ def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
     return mtimes, empty
 
 
-def indexed_mtimes(collection) -> dict[str, object]:
+def freshness(project, collection) -> FreshnessReport:
     from reasonhold.indexer import get_indexed_mtimes
 
-    return get_indexed_mtimes(collection)
+    working, empty = scan_working_tree(project)
+    return compare_freshness(get_indexed_mtimes(collection), working, empty=empty)
 
 
-def _open_collection():
-    from reasonhold.store import connect as get_client
-
-    client = get_client()
-    return client, client.collections.get(COLLECTION_NAME)
+def symbols(collection, chunk_type, file_prefix=None, names_only=False):
+    rows = select_by_prefix(query_chunks(collection, chunk_type=chunk_type), [file_prefix] if file_prefix else None)
+    return symbol_names(rows) if names_only else rows
 
 
-def _emit(rows: list[dict], as_names: bool, as_json: bool, count_only: bool) -> None:
-    if count_only:
-        print(len(rows))
-    elif as_json:
-        print(json.dumps(rows, indent=2, sort_keys=True))
-    elif as_names:
-        for name in symbol_names(rows):
-            print(name)
-    else:
-        for row in rows:
-            print(f"{row.get('file_path', '')}\t{row.get('section_heading', '')}")
+def inventory(collection) -> dict[str, int]:
+    return chunk_type_inventory(collection)
 
 
-def _run_freshness(collection) -> int:
-    working, empty = scan_working_tree()
-    report = compare_freshness(indexed_mtimes(collection), working, empty=empty)
-    print(report.summary())
-    for label, paths in (
-        ("stale", report.stale),
-        ("not indexed", report.missing),
-        ("orphaned", report.orphaned),
-        ("empty (cannot be indexed)", report.empty),
-    ):
-        for path in paths:
-            print(f"  {label}: {path}")
-    return 0 if report.is_clean else 1
+def list_indexed_files(collection) -> list[dict]:
+    file_info: dict[str, dict] = {}
+    for obj in collection.iterator(include_vector=False):
+        fp = obj.properties.get("file_path", "")
+        lm = obj.properties.get("last_modified")
+        if fp not in file_info:
+            file_info[fp] = {"file_path": fp, "chunk_count": 0, "last_indexed": None}
+        file_info[fp]["chunk_count"] += 1
+        if lm:
+            ts = lm if isinstance(lm, str) else lm.isoformat()
+            if file_info[fp]["last_indexed"] is None or ts > file_info[fp]["last_indexed"]:
+                file_info[fp]["last_indexed"] = ts
+    return sorted(file_info.values(), key=lambda x: x["file_path"])
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Exact symbol queries over the docs-rag index (no ranked retrieval).",
-    )
-    parser.add_argument("--chunk-type", help="Exact chunk_type, e.g. sql_function, python_function")
-    parser.add_argument("--file-type", help="Exact file_type, e.g. python, sql, markdown")
-    parser.add_argument("--area", help="Exact sync-doc.yaml area attribution")
-    parser.add_argument(
-        "--file-prefix",
-        action="append",
-        default=[],
-        help="Keep only rows whose file_path starts with this prefix (repeatable)",
-    )
-    parser.add_argument("--names", action="store_true", help="Print symbol names only")
-    parser.add_argument("--json", action="store_true", help="Print full rows as JSON")
-    parser.add_argument("--count", action="store_true", help="Print the row count only")
-    parser.add_argument("--inventory", action="store_true", help="Tally chunk_type across the corpus")
-    parser.add_argument("--freshness", action="store_true", help="Compare the index against the working tree")
-    args = parser.parse_args()
-
-    modes = [args.freshness, args.inventory]
-    if all(modes):
-        parser.error("--freshness and --inventory are separate modes")
-    if not any(modes) and not any([args.chunk_type, args.file_type, args.area, args.file_prefix]):
-        parser.error("give a filter (--chunk-type/--file-type/--area/--file-prefix), --inventory, or --freshness")
-    client, collection = _open_collection()
-    try:
-        if args.freshness:
-            return _run_freshness(collection)
-        if args.inventory:
-            for chunk_type, count in chunk_type_inventory(collection).items():
-                print(f"{count:>6}  {chunk_type}")
-            return 0
-
-        rows = query_chunks(
-            collection,
-            chunk_type=args.chunk_type,
-            file_type=args.file_type,
-            area=args.area,
-        )
-        _emit(select_by_prefix(rows, args.file_prefix), args.names, args.json, args.count)
-        return 0
-    finally:
-        client.close()
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+def absence_guard(state, report=None) -> None:
+    if not state.exists:
+        raise IndexMissing(f"no index for {state.indexed_branch}: run `reasonhold index`")
+    reasons = list(state.stale)
+    if report is not None and not report.is_clean:
+        reasons.append(report.summary())
+    if reasons:
+        raise IndexStale("an empty answer from a stale index proves nothing: " + "; ".join(reasons))

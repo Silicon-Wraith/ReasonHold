@@ -18,11 +18,11 @@ answer. Both are pinned below.
 
 from __future__ import annotations
 
-import reasonhold.symbols as reasonhold_symbols
+import reasonhold.codeindex as reasonhold_symbols
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from reasonhold.symbols import (
+from reasonhold.codeindex import (
     FreshnessReport,
     coerce_mtime,
     compare_freshness,
@@ -209,7 +209,7 @@ class TestQueryPathIsExact:
         found = [term for term in self.BANNED if term in source]
 
         assert not found, (
-            f"symbols.py references ranked search ({', '.join(found)}). "
+            f"codeindex.py references ranked search ({', '.join(found)}). "
             "An absence finding sourced from a ranked result is the false positive "
             "decision `substrate-checks-use-property-filters` exists to prevent."
         )
@@ -217,8 +217,8 @@ class TestQueryPathIsExact:
     def test_source_uses_property_filters_and_iterator(self):
         source = (Path(reasonhold_symbols.__file__)).read_text()
 
-        assert "by_property" in source, "symbols.py does not filter by property"
-        assert "iterator(" in source, "symbols.py does not use iterator(), so recall is not total"
+        assert "by_property" in source, "codeindex.py does not filter by property"
+        assert "iterator(" in source, "codeindex.py does not use iterator(), so recall is not total"
 
 
 class TestEmptyFilesAreNotFreshnessFindings:
