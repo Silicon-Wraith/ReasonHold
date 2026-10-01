@@ -199,13 +199,15 @@ def main(argv=None, *, factory=None) -> int:
             (root / "reasonhold.yaml").write_text(scaffold_manifest(root))
             (root / "decisions.jsonl").touch()
             print("wrote reasonhold.yaml and decisions.jsonl; review the manifest, then run `reasonhold check`")
+            print("To install the agent skills: reasonhold skills install")
             return 0
         if args.command == "skills":
             from reasonhold.skills import install
 
             out = install(root)
-            _print(out if args.json else f"installed {', '.join(out['installed'])} ({out['version']}) into {out['path']}",
-                   args.json)
+            _print(out if args.json else "\n".join(
+                [f"installed {', '.join(out['installed'])} ({out['version']}) into {out['path']}",
+                 *(f"removed {path}" for path in out["removed"])]), args.json)
             return 0
         from reasonhold.api import ReasonHold
 

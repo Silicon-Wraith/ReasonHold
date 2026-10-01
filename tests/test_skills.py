@@ -24,7 +24,7 @@ def names():
 def test_install_copies_the_pack_and_stamps_the_version(tmp_path):
     out = install(tmp_path)
     target = tmp_path / ".claude" / "skills"
-    assert out == {"installed": names(), "version": __version__, "path": str(target)}
+    assert out == {"installed": names(), "removed": [], "version": __version__, "path": str(target)}
     assert names() and all((target / n / "SKILL.md").is_file() for n in names())
     assert all((target / n / MARKER).is_file() for n in names())
     assert (target / STAMP).read_text().strip() == __version__
@@ -56,19 +56,51 @@ def test_install_leaves_unrelated_skills_alone(tmp_path):
     assert other.read_text() == "other"
 
 
+def test_reinstall_removes_marked_skills_the_pack_no_longer_ships(tmp_path):
+    install(tmp_path)
+    retired = write(tmp_path, f".claude/skills/retired-skill/{MARKER}", "0.1.0\n").parent
+    unmarked = write(tmp_path, ".claude/skills/unmarked-skill/SKILL.md", "mine").parent
+    out = install(tmp_path)
+    assert out["removed"] == [str(retired)]
+    assert not retired.exists()
+    assert (unmarked / "SKILL.md").read_text() == "mine"
+
+
+def test_skills_line_is_silent_where_reasonhold_never_installed_skills(tmp_path):
+    assert skills_line(tmp_path) is None
+    write(tmp_path, ".claude/skills/other/SKILL.md", "other")
+    assert skills_line(tmp_path) is None
+
+
 def test_skills_line_names_the_stamp_and_the_package(tmp_path):
-    assert skills_line(tmp_path) == f"skills from none, package {__version__}: run `reasonhold skills install`"
     install(tmp_path)
     assert skills_line(tmp_path) is None
-    (tmp_path / ".claude" / "skills" / STAMP).write_text("0.0.9\n")
+    stamp = tmp_path / ".claude" / "skills" / STAMP
+    stamp.write_text("0.0.9\n")
     assert skills_line(tmp_path) == f"skills from 0.0.9, package {__version__}: run `reasonhold skills install`"
+    stamp.unlink()
+    assert skills_line(tmp_path) == f"skills from none, package {__version__}: run `reasonhold skills install`"
 
 
-def test_preamble_reports_missing_or_stale_skills(tmp_path):
+def test_preamble_reports_only_stale_installed_skills(tmp_path):
     root = make_repo(tmp_path / "r")
-    assert "skills from none" in render_preamble(root, index_probe=fresh_probe)
+    assert "reasonhold skills install" not in render_preamble(root, index_probe=fresh_probe)
     install(root)
     assert "reasonhold skills install" not in render_preamble(root, index_probe=fresh_probe)
+    (root / ".claude" / "skills" / STAMP).write_text("0.0.9\n")
+    assert "skills from 0.0.9" in render_preamble(root, index_probe=fresh_probe)
+
+
+def test_init_closing_message_points_at_skills_install(tmp_path, capsys):
+    assert main(["--root", str(tmp_path), "init"]) == 0
+    assert "To install the agent skills: reasonhold skills install" in capsys.readouterr().out
+
+
+def test_cli_skills_install_prints_removed_paths(tmp_path, capsys):
+    install(tmp_path)
+    retired = write(tmp_path, f".claude/skills/retired-skill/{MARKER}", "0.1.0\n").parent
+    assert main(["skills", "install", "--root", str(tmp_path)]) == 0
+    assert f"removed {retired}" in capsys.readouterr().out
 
 
 def test_cli_skills_install(tmp_path, capsys):
