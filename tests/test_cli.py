@@ -1,5 +1,8 @@
 import io
 import json
+import os
+import subprocess
+import sys
 
 import pytest
 
@@ -159,3 +162,28 @@ def test_mcp_without_a_manifest_exits_2_with_one_line(tmp_path, capsys):
     assert main(["--root", str(tmp_path), "mcp"]) == 2
     err = capsys.readouterr().err
     assert err.startswith("reasonhold:") and len(err.strip().splitlines()) == 1
+
+
+@pytest.mark.parametrize("argv", [["check"], ["preamble", "--format", "claude-hook"]])
+def test_console_commands_print_no_authlib_deprecation_warning(tmp_path, argv):
+    pytest.importorskip("authlib")
+    make_repo(tmp_path / "r")
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONWARNINGS"}
+    env["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    code = "import sys; from reasonhold.cli import main; sys.exit(main(sys.argv[1:]))"
+    done = subprocess.run([sys.executable, "-c", code, "--root", str(tmp_path / "r"), *argv],
+                          capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+    assert "AuthlibDeprecationWarning" not in done.stderr
+
+
+def test_mcp_read_only_flag_reaches_the_server(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("reasonhold.mcp_server.serve",
+                        lambda root, read_only=False: seen.update(root=root, read_only=read_only))
+    assert main(["--root", str(tmp_path), "mcp", "--read-only"]) == 0
+    assert seen == {"root": tmp_path.resolve(), "read_only": True}
+    assert main(["--root", str(tmp_path), "mcp"]) == 0
+    assert seen["read_only"] is False
+    other = tmp_path / "other"
+    assert main(["mcp", "--root", str(other), "--read-only"]) == 0
+    assert seen == {"root": other.resolve(), "read_only": True}

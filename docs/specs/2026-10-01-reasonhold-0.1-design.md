@@ -142,7 +142,7 @@ A `candidate_binding` or `conflict` is open until a `resolution` names it. Open 
 
 **Embedding (R-15, R-16).** A provider protocol `{embed(texts), dims, model_id}` with Ollama and OpenAI-compatible implementations over plain HTTP; batching and truncation belong to the provider. Default: Ollama with `qwen3-embedding:0.6b` (spike: at least as good as `qwen3-embedding:4b` on Ariadne's corpus, 2.5x smaller vectors, half the embedding time). The model guard compares recorded `model_id` and `dims` with the configured provider and refuses to query or extend on mismatch, naming `reasonhold index --full` as the fix.
 
-**Corpus.** As today: documents and code from the manifest's `index` and area globs, chunked structurally (markdown, Python, C#, SQL, YAML, the manifest itself) plus one chunk per decision. Open pending records are indexed as searchable chunks but never treated as governing documents.
+**Corpus.** As today: documents and code from the manifest's `index` and area globs (0.1.1 adds `global.docs`, so a document listed only there is indexed too), chunked structurally (markdown, Python, C#, SQL, YAML, the manifest itself) plus one chunk per decision. Open pending records are indexed as searchable chunks but never treated as governing documents.
 
 **Kept behaviour (R-17),** each pinned by the existing tests: `FIELD` tokenization of paths; insert first, then delete stale chunks; verified inserts with one retry; the binary-file guard; full re-index recreates the collection; schema drift raises instead of repairing; deterministic chunk UUIDs.
 

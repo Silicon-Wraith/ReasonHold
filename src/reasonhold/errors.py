@@ -27,3 +27,11 @@ class UnknownRecord(ReasonHoldError):
 
 class StoreUnavailable(ReasonHoldError):
     """Weaviate or the embedding provider could not be reached."""
+
+
+class SkillsConflict(ReasonHoldError):
+    """A skill directory ReasonHold would install already exists and ReasonHold did not install it."""
+
+
+class SkillsInstallFailed(ReasonHoldError):
+    """The skill pack could not be written (a file in the way, permissions, a full disk)."""

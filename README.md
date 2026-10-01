@@ -46,15 +46,24 @@ Answers say which branch's index they came from and whether it is fresh. Queries
 - **MCP (stdio):** add `src/reasonhold/resources/mcp.json` to your client's MCP configuration (`reasonhold mcp`).
 - **Claude Code session start:** merge `resources/hooks/claude-settings.json` into `.claude/settings.json`. The preamble fails open and fits in 60 lines and 4096 bytes.
 - **Re-index after merges:** copy `resources/hooks/post-merge` to `.git/hooks/post-merge` and make it executable.
-- **Skills:** copy `resources/skills/*` into `.claude/skills/`. For other CLIs, append `resources/agents-snippet.md` to `AGENTS.md`; that path is unverified until tested per CLI.
+- **Skills:** `reasonhold skills install [--root <repo>]` copies the skill pack into `.claude/skills/` and writes `.claude/skills/.reasonhold-version`. It replaces only skill directories it installed, removes those the pack no longer ships, and refuses if another directory has a packaged skill's name. Where ReasonHold has installed skills, the preamble says when they are from another version: "skills from <x>, package <y>: run `reasonhold skills install`". For other CLIs, append `resources/agents-snippet.md` to `AGENTS.md`; that path is unverified until tested per CLI.
 - **Agno:** `from reasonhold.agno import ReasonHoldTools, ReasonHoldKnowledge, reasonhold_context`.
 
 Find the resources directory with `python -c "import reasonhold, pathlib; print(pathlib.Path(reasonhold.__file__).parent / 'resources')"`.
 
+## One project per location
+
+By default a session serves its own repository's knowledge base and writes only there: `reasonhold mcp` runs at the repository root and answers for that project alone.
+
+Reading another project is opt-in and read-only. Add a local MCP entry that is not committed, for example with Claude Code's local scope:
+
+    claude mcp add -s local other-project -- reasonhold mcp --root /path/to/other-repo --read-only
+
+`--read-only` registers only the query tools (`search_docs`, `search_decisions`, `list_indexed_files`, `governing_docs`, `retractions_for`, `decision`, `conflicts`, `symbols`, `freshness`, `coverage`). Decisions, proposals and conflicts are recorded only in the project the session is working in. Keep the other repository's path out of committed configuration; it differs per machine.
+
 ## Limits
 
 - Reading a file directly bypasses the retraction overlay. The preamble, `governing_docs` and `retractions_for` are how an agent learns a document is stale.
-- A document listed only in `global.docs` governs paths but is not indexed: it is not searchable, and retractions are not stamped on its chunks. List governing documents in an area's `docs` or in `global.index` too, as `reasonhold init` does with `docs/**/*.md`.
 - Codex and other CLIs are unverified: only Claude Code's SessionStart hook is tested.
 - One embedding model per collection; changing it needs `reasonhold index --full`.
 - Each branch has its own collection; a new branch starts with a full index.

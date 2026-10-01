@@ -6,7 +6,7 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 from helpers import FakeClient, FakeProvider, make_repo
-from reasonhold.api import AGENT_TOOLS, ReasonHold
+from reasonhold.api import AGENT_TOOLS, QUERY_TOOLS, WRITE_TOOLS, ReasonHold
 from reasonhold.mcp_server import build_server, instructions
 
 
@@ -76,3 +76,13 @@ def test_store_decision_over_mcp_is_idempotent_with_datetime(server):
     out = run(_call(srv, "store_decision", args))
     assert out["warnings"] == ["already recorded"]
     assert len([x for x in rh.project.decisions_path.read_text().splitlines() if x.strip()]) == 1
+
+
+def test_read_only_server_registers_only_the_query_tools(tmp_path):
+    assert set(WRITE_TOOLS) == {"store_decision", "propose_binding", "report_conflict"}
+    assert set(QUERY_TOOLS) == set(AGENT_TOOLS) - set(WRITE_TOOLS)
+    rh = ReasonHold(make_repo(tmp_path / "r"), connect=FakeClient, provider=FakeProvider())
+    assert run(_names(build_server(rh, read_only=True))) == set(QUERY_TOOLS)
+    text = instructions(rh.project, read_only=True)
+    assert "read-only" in text
+    assert not any(tool in text for tool in WRITE_TOOLS)

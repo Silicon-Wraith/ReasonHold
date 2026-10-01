@@ -5,7 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
+
+# weaviate-client pulls in authlib, whose import sets its deprecation warning to
+# "always". Import it first, then ignore it, so no command or hook prints it.
+try:
+    from authlib.deprecate import AuthlibDeprecationWarning
+except ImportError:
+    pass
+else:
+    warnings.filterwarnings("ignore", category=AuthlibDeprecationWarning)
 
 from reasonhold.errors import ReasonHoldError
 from reasonhold.governance import SOURCE_SUFFIXES
@@ -109,7 +119,14 @@ def _parser() -> argparse.ArgumentParser:
     cr.add_argument("--note")
     pre = sub.add_parser("preamble")
     pre.add_argument("--format", choices=["text", "claude-hook"], default="text")
-    sub.add_parser("mcp", help="run the stdio MCP server")
+    sk = sub.add_parser("skills", help="the packaged skill pack")
+    sksub = sk.add_subparsers(dest="action", required=True)
+    ski = sksub.add_parser("install", help="copy the skill pack into .claude/skills/ and stamp its version")
+    ski.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repository root")
+    mcp = sub.add_parser("mcp", help="run the stdio MCP server")
+    mcp.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repository root to serve")
+    mcp.add_argument("--read-only", action="store_true",
+                     help="register only the query tools (for reading another project's knowledge base)")
     return p
 
 
@@ -168,7 +185,7 @@ def main(argv=None, *, factory=None) -> int:
         from reasonhold.mcp_server import serve
 
         try:
-            serve(root)
+            serve(root, read_only=args.read_only)
         except ReasonHoldError as exc:
             print(f"reasonhold: {exc}", file=sys.stderr)
             return 2
@@ -182,6 +199,15 @@ def main(argv=None, *, factory=None) -> int:
             (root / "reasonhold.yaml").write_text(scaffold_manifest(root))
             (root / "decisions.jsonl").touch()
             print("wrote reasonhold.yaml and decisions.jsonl; review the manifest, then run `reasonhold check`")
+            print("To install the agent skills: reasonhold skills install")
+            return 0
+        if args.command == "skills":
+            from reasonhold.skills import install
+
+            out = install(root)
+            _print(out if args.json else "\n".join(
+                [f"installed {', '.join(out['installed'])} ({out['version']}) into {out['path']}",
+                 *(f"removed {path}" for path in out["removed"])]), args.json)
             return 0
         from reasonhold.api import ReasonHold
 
