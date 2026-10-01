@@ -126,6 +126,8 @@ def index_state(project, client) -> IndexState:
         rebuild.append("collection has no ReasonHold metadata")
     else:
         rebuild = rebuild_reasons(project, meta, rules_head)
+        if meta.last_full_index is None:
+            rebuild.append("no completed full index (a previous build failed or was interrupted)")
         stale.extend(rebuild)
         if not rebuild and rules_head and meta.indexed_commit and rules_head != meta.indexed_commit:
             stale.append(
@@ -215,8 +217,21 @@ def run_index(project, client, provider, *, full=False, dry_run=False, area_name
         indexed_commit=previous.indexed_commit if previous else None,
         last_full_index=previous.last_full_index if previous else None,
     )
+    # A new or recreated collection starts with blank hashes and no commit, so an interrupted
+    # build is never reported fresh. The real meta is written only after the loop completes.
+    blank = CollectionMeta(
+        project=project.id,
+        branch=state.indexed_branch,
+        model_id=provider.model_id,
+        dims=provider.dims,
+        manifest_sha256="",
+        authority_sha256="",
+        retraction_sha256="",
+        indexed_commit=None,
+        last_full_index=None,
+    )
     with index_lock(state.collection):
-        ensure_collection(client, state.collection, meta, recreate=full)
+        ensure_collection(client, state.collection, blank, recreate=full)
         collection = client.collections.get(state.collection)
         indexed = {} if full else get_indexed_mtimes(collection)
         overlay = load_retraction_overlay(project.decisions_path, PendingLog.load(project.pending_path).aliases())
@@ -259,6 +274,11 @@ def gc_candidates(project, client) -> list[str]:
     if head_commit(project.root) is None:
         return []  # without git there is no list of live branches to compare against
     branches = local_branches(project.root)
+    if not branches:
+        return []  # git failed or timed out: never treat every branch as deleted
+    here = current_branch(project.root)
+    if not here.startswith("detached-") and here != "no-git" and here not in branches:
+        return []
     prefix = collection_name(project.id, "main").rsplit("__", 1)[0] + "__"
     out = []
     for name in list_collections(client, prefix):
@@ -280,7 +300,10 @@ def gc(project, client, *, yes=False, confirm=None, out=print) -> list[str]:
     for name in candidates:
         out(f"  {name}")
     if not yes:
-        answer = (confirm or input)(f"Drop {len(candidates)} collection(s)? [y/N] ")
+        try:
+            answer = (confirm or input)(f"Drop {len(candidates)} collection(s)? [y/N] ")
+        except EOFError:
+            answer = "n"
         if answer.strip().lower() not in ("y", "yes"):
             out("nothing dropped")
             return []

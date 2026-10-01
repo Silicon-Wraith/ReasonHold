@@ -3,7 +3,7 @@ import re
 import pytest
 
 from helpers import FakeClient, FakeCollection, FakeProvider, MINIMAL_MANIFEST, git, make_repo, write
-from reasonhold.errors import ModelMismatch, ReasonHoldError
+from reasonhold.errors import ModelMismatch, ReasonHoldError, StoreUnavailable
 from reasonhold.lifecycle import gc, gc_candidates, index_lock, index_state, run_index
 from reasonhold.project import Project
 from reasonhold.store import CollectionMeta, read_meta
@@ -155,3 +155,33 @@ def test_gc_drops_only_this_projects_deleted_branches(repo):
     assert gc(project, client, confirm=lambda prompt: "n", **QUIET) == []
     assert gc(project, client, yes=True, **QUIET) == ["RH_Repo__gone"]
     assert client.deleted == ["RH_Repo__gone"]
+
+
+def test_failed_first_build_is_not_fresh(repo):
+    client = FakeClient()
+    with pytest.raises(StoreUnavailable):
+        run_index(Project.load(repo), client, FakeProvider(fail=True), **QUIET)
+    state = index_state(Project.load(repo), client)
+    assert not state.fresh and state.rebuild
+
+
+def test_failed_full_build_over_a_good_index_is_not_fresh(repo):
+    client, _ = build(repo)
+    with pytest.raises(StoreUnavailable):
+        run_index(Project.load(repo), client, FakeProvider(fail=True), full=True, **QUIET)
+    state = index_state(Project.load(repo), client)
+    assert not state.fresh and state.rebuild
+
+
+def test_gc_does_nothing_when_git_lists_no_branches(repo, monkeypatch):
+    import reasonhold.lifecycle as lifecycle
+    client = FakeClient(meta_collection("RH_Repo__main", "repo", "main"), meta_collection("RH_Repo__gone", "repo", "gone"))
+    monkeypatch.setattr(lifecycle, "local_branches", lambda root: set())
+    assert gc_candidates(Project.load(repo), client) == []
+
+
+def test_gc_eof_on_confirm_means_no(repo):
+    client = FakeClient(meta_collection("RH_Repo__gone", "repo", "gone"))
+    def eof(prompt):
+        raise EOFError
+    assert gc(Project.load(repo), client, confirm=eof, **QUIET) == []
