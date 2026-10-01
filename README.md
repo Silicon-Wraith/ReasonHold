@@ -46,7 +46,7 @@ Answers say which branch's index they came from and whether it is fresh. Queries
 - **MCP (stdio):** add `src/reasonhold/resources/mcp.json` to your client's MCP configuration (`reasonhold mcp`).
 - **Claude Code session start:** merge `resources/hooks/claude-settings.json` into `.claude/settings.json`. The preamble fails open and fits in 60 lines and 4096 bytes.
 - **Re-index after merges:** copy `resources/hooks/post-merge` to `.git/hooks/post-merge` and make it executable.
-- **Skills:** copy `resources/skills/*` into `.claude/skills/`. For other CLIs, append `resources/agents-snippet.md` to `AGENTS.md`; that path is unverified until tested per CLI.
+- **Skills:** `reasonhold skills install [--root <repo>]` copies the skill pack into `.claude/skills/` and writes `.claude/skills/.reasonhold-version`. It replaces only skill directories it installed and refuses if another directory has a packaged skill's name. The preamble says when the installed pack is missing or from another version: "skills from <x>, package <y>: run `reasonhold skills install`". For other CLIs, append `resources/agents-snippet.md` to `AGENTS.md`; that path is unverified until tested per CLI.
 - **Agno:** `from reasonhold.agno import ReasonHoldTools, ReasonHoldKnowledge, reasonhold_context`.
 
 Find the resources directory with `python -c "import reasonhold, pathlib; print(pathlib.Path(reasonhold.__file__).parent / 'resources')"`.

@@ -119,6 +119,10 @@ def _parser() -> argparse.ArgumentParser:
     cr.add_argument("--note")
     pre = sub.add_parser("preamble")
     pre.add_argument("--format", choices=["text", "claude-hook"], default="text")
+    sk = sub.add_parser("skills", help="the packaged skill pack")
+    sksub = sk.add_subparsers(dest="action", required=True)
+    ski = sksub.add_parser("install", help="copy the skill pack into .claude/skills/ and stamp its version")
+    ski.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repository root")
     mcp = sub.add_parser("mcp", help="run the stdio MCP server")
     mcp.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repository root to serve")
     mcp.add_argument("--read-only", action="store_true",
@@ -195,6 +199,13 @@ def main(argv=None, *, factory=None) -> int:
             (root / "reasonhold.yaml").write_text(scaffold_manifest(root))
             (root / "decisions.jsonl").touch()
             print("wrote reasonhold.yaml and decisions.jsonl; review the manifest, then run `reasonhold check`")
+            return 0
+        if args.command == "skills":
+            from reasonhold.skills import install
+
+            out = install(root)
+            _print(out if args.json else f"installed {', '.join(out['installed'])} ({out['version']}) into {out['path']}",
+                   args.json)
             return 0
         from reasonhold.api import ReasonHold
 

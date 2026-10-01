@@ -200,6 +200,16 @@ def _guarded(build) -> list[str]:
         return [f"- unavailable ({type(exc).__name__}: {exc})"]
 
 
+def skills_rows(root: Path):
+    """The installed skill pack's notice, as a builder for _guarded."""
+    def build() -> list[str]:
+        from reasonhold.skills import skills_line
+
+        line = skills_line(root)
+        return [f"- {line}"] if line else []
+    return build
+
+
 def render_preamble(
     root: Path | str | None = None,
     *,
@@ -220,6 +230,7 @@ def render_preamble(
             index = (index_probe or index_lines)(project)
         except Exception as exc:
             index = [f"- Index: unavailable ({type(exc).__name__}: {exc})"]
+        index = index + _guarded(skills_rows(project.root))
 
         def retractions() -> list[str]:
             return [_retraction_row(r) for r in load_active_supersedes(project.decisions_path)]
