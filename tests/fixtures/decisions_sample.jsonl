@@ -1,0 +1,8 @@
+{"topic":"first-retraction","datetime":"2026-01-10T00:00:00+00:00","status":"active","decision":"A","rationale":"r","supersedes":[{"path":"docs/architecture/alpha.md","retraction_summary":"Alpha no longer holds; beta does."}]}
+{"topic":"anchored-retraction","datetime":"2026-02-11T00:00:00+00:00","status":"active","decision":"B","rationale":"r","supersedes":[{"path":"docs/architecture/beta.md#Design Principles","retraction_summary":"Only that section is retracted."}]}
+{"topic":"no-supersedes","datetime":"2026-03-12T00:00:00+00:00","status":"active","decision":"C","rationale":"r"}
+{"topic":"superseded-record","datetime":"2026-04-13T00:00:00+00:00","status":"superseded","decision":"D","rationale":"r","supersedes":[{"path":"docs/architecture/ghost.md","retraction_summary":"Should never appear — the record itself is superseded."}]}
+{"topic":"second-retraction-same-path","datetime":"2026-05-14T00:00:00+00:00","status":"active","decision":"E","rationale":"r","supersedes":[{"path":"docs/architecture/alpha.md","retraction_summary":"A second, later correction to the same document."}]}
+{"topic":"multi-entry","datetime":"2026-06-15T00:00:00+00:00","status":"active","decision":"F","rationale":"r","supersedes":[{"path":"docs/one.md","retraction_summary":"One."},{"path":"docs/two.md","retraction_summary":"Two."}]}
+{"topic":"malformed-entry","datetime":"2026-07-16T00:00:00+00:00","status":"active","decision":"G","rationale":"r","supersedes":[{"path":"docs/nosummary.md"},{"retraction_summary":"no path"}]}
+not valid json at all
