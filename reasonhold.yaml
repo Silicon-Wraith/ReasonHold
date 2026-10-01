@@ -2,11 +2,36 @@ project:
   id: reasonhold
 global:
   docs: [docs/specs/2026-10-01-reasonhold-0.1-design.md, docs/architecture/requirements.md]
-  archival: [docs/reviews/2026-09-23-origin-extraction-triage.md]
-  index: [README.md, "docs/**/*.md"]
+  archival:
+    - docs/reviews/2026-09-23-origin-extraction-triage.md
+    - docs/reviews/2026-10-01-embedding-spike.md
+    - docs/reviews/2026-10-01-m2-package-execution.md
+    - docs/plans/2026-10-01-reasonhold-0.1-plan-1-package.md
+  index:
+    - README.md
+    - "docs/**/*.md"
+    # Packaged agent resources: indexed and placed, never governing.
+    - src/reasonhold/resources/agents-snippet.md
+    - src/reasonhold/resources/skills/consult-before-design/SKILL.md
+    - src/reasonhold/resources/skills/propose-and-report/SKILL.md
+    - src/reasonhold/resources/skills/record-decision/SKILL.md
+    - src/reasonhold/resources/skills/reindex/SKILL.md
+    - src/reasonhold/resources/skills/session-bootstrap/SKILL.md
 areas:
   package:
     description: The reasonhold Python package
     projects: [reasonhold]
     docs: [docs/specs/2026-10-01-reasonhold-0.1-design.md]
-    index: ["src/reasonhold/*.py", "tests/*.py"]
+    index: ["src/reasonhold/*.py", "tests/*.py", "tests/integration/*.py"]
+    checks: [package-follows-design, tests-follow-design]
+checks:
+  package-follows-design:
+    description: The package implements the 0.1 design and the requirements it answers
+    mode: index
+    reads: [docs/specs/2026-10-01-reasonhold-0.1-design.md, docs/architecture/requirements.md]
+    validates_against: [src/reasonhold/]
+  tests-follow-design:
+    description: Unit and integration tests follow the design's testing section
+    mode: index
+    reads: [docs/specs/2026-10-01-reasonhold-0.1-design.md]
+    validates_against: [tests/]
