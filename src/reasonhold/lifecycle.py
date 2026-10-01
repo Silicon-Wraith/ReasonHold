@@ -184,7 +184,7 @@ def corpus_files(project, area_names=None) -> list[tuple[str, Path]]:
     return gather_files(project.root, globs, decisions_path=project.decisions_path, pending_path=project.pending_path)
 
 
-def run_index(project, client, provider, *, full=False, dry_run=False, area_names=None, out=print, now=None) -> IndexReport:
+def run_index(project, client, provider, *, full=False, dry_run=False, out=print, now=None) -> IndexReport:
     state = index_state(project, client)
     if state.branch != state.indexed_branch:
         return IndexReport(state.collection, False, [], dry_run=dry_run,
@@ -205,7 +205,7 @@ def run_index(project, client, provider, *, full=False, dry_run=False, area_name
     full = bool(reasons)
     report = IndexReport(state.collection, full, reasons, dry_run=dry_run)
     report.curation = curation
-    files = corpus_files(project, area_names)
+    files = corpus_files(project)
 
     def enrich(chunk):
         return enrich_for_project(chunk, project)

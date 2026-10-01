@@ -100,3 +100,18 @@ def test_helpers_respect_decision_chunks():
     col.add("d", chunk_type="decision", file_path="docs/x.md", record_id="dec-1")
     assert apply_retraction_to_chunks(col, "docs/x.md", "s", "t", "d") == 0
     assert mark_records_superseded(col, ["dec-1"]) == 1
+
+
+def test_store_decision_resolves_only_open_conflicts_not_candidates(project):
+    from reasonhold.writes import propose_binding, report_conflict
+
+    cand = propose_binding(project, target="worker-contract", reads=["AGENTS.md"], validates_against=["src/worker/"],
+                           reason="r", provenance={"kind": "agent"})
+    before = project.pending_path.read_text()
+    with pytest.raises(ValueError, match=cand["id"] + ".*candidates promote"):
+        call(project, FakeCollection(), FakeProvider(), resolves=[cand["id"]])
+    assert project.pending_path.read_text() == before and project.decisions_path.read_text() == ""
+    conflict = report_conflict(project, doc_a="a.md", doc_b="b.md", paths=[], claim="c", evidence_a="x",
+                               evidence_b="y", provenance={"kind": "agent"})
+    out = call(project, FakeCollection(), FakeProvider(), resolves=[conflict["id"]])
+    assert out["record"]["resolves"] == [conflict["id"]]

@@ -72,3 +72,12 @@ def test_decision_chunks_carry_record_id_and_computed_status():
     assert [c["record_id"] for c in chunks] == [decision_id("a", "t1"), decision_id("b", "t2")]
     assert [c["decision_status"] for c in chunks] == ["superseded", "active"]
     assert "Status: superseded" in chunks[0]["content"]
+
+
+def test_non_object_json_lines_are_skipped(tmp_path):
+    from reasonhold.decisions import DecisionLog
+
+    path = tmp_path / "decisions.jsonl"
+    path.write_text('[1]\n5\n"s"\nnull\n{"id": "dec-1", "topic": "t", "decision": "d", "datetime": "x"}\n')
+    log = DecisionLog.load(path)
+    assert log.get("dec-1") is not None

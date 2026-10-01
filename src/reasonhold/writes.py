@@ -110,13 +110,16 @@ def report_conflict(project, *, doc_a, doc_b, paths, claim, evidence_a, evidence
     return _append_pending(project, "conflict", payload, provenance, datetime_)
 
 
-def _require_open(project, pending_ids) -> list[str]:
+def _require_open(project, pending_ids, kinds=None) -> list[str]:
     if not isinstance(pending_ids, list) or not pending_ids:
         raise ValueError("pending_ids must be a non-empty list")
     log = PendingLog.load(project.pending_path)
     for pid in pending_ids:
         if not log.is_open(pid):
             raise UnknownRecord(f"{pid} is not an open candidate or conflict in {project.pending_rel}")
+        if kinds is not None and (log.get(pid) or {}).get("kind") not in kinds:
+            raise ValueError(f"{pid} is not an open conflict: candidates are resolved by a human with "
+                             "`reasonhold candidates promote|reject`")
     return list(dict.fromkeys(pending_ids))
 
 
@@ -179,7 +182,7 @@ def store_decision(
                             existing.get("provenance") or clean_provenance, when)
         return {"record": existing, "status": log.status(rid), "indexed": True, "annotated_chunks": 0,
                 "warnings": ["already recorded"]}
-    resolve_ids = _require_open(project, resolves) if resolves else []
+    resolve_ids = _require_open(project, resolves, kinds=("conflict",)) if resolves else []
 
     record = {
         "id": rid,

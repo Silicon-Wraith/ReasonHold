@@ -42,12 +42,14 @@ class ReasonHoldTools(Toolkit):
     def store_decision(self, topic: str, decision: str, rationale: str, alternatives_considered: list[str] | None = None,
                        session_context: str = "", tags: list[str] | None = None, supersedes: list[dict] | None = None,
                        supersedes_records: list[str] | None = None, resolves: list[str] | None = None,
-                       provenance: dict | None = None) -> str:
-        """Append a decision; supersedes retracts documents, supersedes_records retires decisions, resolves closes conflicts."""
+                       provenance: dict | None = None, datetime: str | None = None) -> str:
+        """Append a decision; supersedes retracts documents, supersedes_records retires decisions, resolves closes
+        conflicts. datetime (optional ISO timestamp) makes a retry idempotent: the same topic and datetime records once."""
         return _json(lambda: self.rh.store_decision(
             topic=topic, decision=decision, rationale=rationale, alternatives_considered=alternatives_considered,
             session_context=session_context, tags=tags, supersedes=supersedes,
-            supersedes_records=supersedes_records, resolves=resolves, provenance=agent_provenance(provenance, "agno")))
+            supersedes_records=supersedes_records, resolves=resolves, provenance=agent_provenance(provenance, "agno"),
+            datetime_=datetime))
 
     def list_indexed_files(self) -> str:
         """Every indexed file with chunk count and last indexed time."""
@@ -118,7 +120,11 @@ class ReasonHoldKnowledge:
         return _json(lambda: self.rh.search_docs(query, self.top_k))
 
     def retrieve(self, query: str, **kwargs) -> list[Document]:
-        hits = self.rh.search_docs(query, kwargs.get("max_results") or self.top_k)["results"]
+        try:
+            hits = self.rh.search_docs(query, kwargs.get("max_results") or self.top_k)["results"]
+        except Exception as exc:  # fail open: an unavailable index must not stop the agent run
+            return [Document(content=f"ReasonHold search is unavailable ({type(exc).__name__}: {exc})",
+                             meta_data={"error": True})]
         return [
             Document(content=h.get("content", ""), name=h.get("file_path"),
                      meta_data={k: h[k] for k in _META_FIELDS if h.get(k) not in (None, "")})

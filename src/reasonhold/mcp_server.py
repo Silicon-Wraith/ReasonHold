@@ -45,15 +45,17 @@ def build_server(rh) -> FastMCP:
         supersedes_records: list[str] | None = None,
         resolves: list[str] | None = None,
         provenance: dict | None = None,
+        datetime: str | None = None,
     ) -> dict:
         """Append a decision. supersedes: [{"path": "docs/x.md#Section", "retraction_summary": "what now holds"}]
         retracts documents (never src/ or tests/); supersedes_records retires earlier decision ids;
-        resolves closes open conflict ids."""
+        resolves closes open conflict ids.
+        datetime (optional ISO timestamp) makes a retry idempotent: the same topic and datetime records once."""
         return rh.store_decision(
             topic=topic, decision=decision, rationale=rationale, alternatives_considered=alternatives_considered,
             session_context=session_context, tags=tags, supersedes=supersedes,
             supersedes_records=supersedes_records, resolves=resolves,
-            provenance=agent_provenance(provenance, "mcp"),
+            provenance=agent_provenance(provenance, "mcp"), datetime_=datetime,
         )
 
     @mcp.tool

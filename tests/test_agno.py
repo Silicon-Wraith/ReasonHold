@@ -63,3 +63,16 @@ def test_render_context_fails_open(rh, monkeypatch):
 
     monkeypatch.setattr(rh, "governing_docs", boom)
     assert "unavailable" in render_context(rh, ["src/worker/main.py"])
+
+
+def test_toolkit_store_decision_is_idempotent_with_datetime(rh):
+    tools = ReasonHoldTools(rh)
+    for _ in range(2):
+        out = json.loads(tools.store_decision(topic="t", decision="d", rationale="r", datetime="2026-10-01T00:00:00+00:00"))
+    assert out["warnings"] == ["already recorded"]
+    assert len([x for x in rh.project.decisions_path.read_text().splitlines() if x.strip()]) == 1
+
+
+def test_knowledge_retrieve_fails_open(rh):
+    docs = ReasonHoldKnowledge(rh).retrieve("anything")
+    assert len(docs) == 1 and docs[0].meta_data == {"error": True} and "unavailable" in docs[0].content

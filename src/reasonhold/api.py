@@ -182,9 +182,8 @@ class ReasonHold:
         )
 
     # Administration
-    def index(self, full=False, dry_run=False, areas=None, out=print):
-        report = lifecycle.run_index(self.project, self.client, self.provider, full=full, dry_run=dry_run,
-                                     area_names=set(areas) if areas else None, out=out)
+    def index(self, full=False, dry_run=False, out=print):
+        report = lifecycle.run_index(self.project, self.client, self.provider, full=full, dry_run=dry_run, out=out)
         self.reload()
         return report.as_dict()
 

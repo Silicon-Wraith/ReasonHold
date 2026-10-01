@@ -67,3 +67,12 @@ def test_store_decision_over_mcp_records_agent_provenance(server):
 def test_errors_reach_the_agent_with_the_fix(server):
     with pytest.raises(ToolError, match="reasonhold index"):
         run(_call(server[0], "search_docs", {"query": "anything"}))
+
+
+def test_store_decision_over_mcp_is_idempotent_with_datetime(server):
+    srv, rh = server
+    args = {"topic": "t", "decision": "d", "rationale": "r", "datetime": "2026-10-01T00:00:00+00:00"}
+    run(_call(srv, "store_decision", args))
+    out = run(_call(srv, "store_decision", args))
+    assert out["warnings"] == ["already recorded"]
+    assert len([x for x in rh.project.decisions_path.read_text().splitlines() if x.strip()]) == 1

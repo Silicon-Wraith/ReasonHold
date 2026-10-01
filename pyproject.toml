@@ -33,4 +33,5 @@ reasonhold = ["schemas/*.json", "resources/**/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers -m 'not integration'"
+filterwarnings = ["ignore::authlib.deprecate.AuthlibDeprecationWarning"]
 markers = ["integration: needs the local Weaviate (port 8081) and Ollama; run on purpose"]

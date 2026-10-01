@@ -108,3 +108,54 @@ def test_init_with_unusable_directory_name_exits_2(tmp_path, cli):
     bad.mkdir()
     code, _, err = cli("--root", str(bad), "init")
     assert code == 2 and err.startswith("reasonhold:")
+
+
+def test_init_attributes_top_level_files_and_references_nothing_missing(tmp_path, cli):
+    write(tmp_path, "pkg/top.py", "x = 1\n")
+    write(tmp_path, "pkg/sub/deep.py", "y = 2\n")
+    assert cli("--root", str(tmp_path), "init")[0] == 0
+    manifest = Project.load(tmp_path).manifest
+    assert manifest.infer_area("pkg/top.py") == "pkg" and manifest.infer_area("pkg/sub/deep.py") == "pkg"
+    assert manifest.areas[0].docs == ("reasonhold.yaml",)  # no docs or guidance files: the manifest anchors
+    code, out, _ = cli("--root", str(tmp_path), "--json", "check")
+    assert code == 0 and not [p for p in json.loads(out) if "missing" in p["message"] or "not found" in p["message"]]
+    code, out, _ = cli("--root", str(tmp_path), "--json", "coverage")
+    result = json.loads(out)
+    assert code == 0 and result["missing_references"] == [] and result["holes"] == 0
+
+
+def test_index_has_no_area_option(tmp_path, cli, capsys):
+    with pytest.raises(SystemExit):
+        cli("--root", str(tmp_path), "index", "--area", "x")
+
+
+def test_decide_stdin_rejects_unknown_and_missing_fields_with_exit_2(tmp_path, cli, monkeypatch):
+    root = make_repo(tmp_path / "r")
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"topic": "t", "decision": "d", "rationale": "r", "bogus": 1})))
+    code, _, err = cli("--root", str(root), "decide", "--stdin")
+    assert code == 2 and err.startswith("reasonhold:") and "bogus" in err
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"topic": "t"})))
+    code, _, err = cli("--root", str(root), "decide", "--stdin")
+    assert code == 2 and err.startswith("reasonhold:") and "decision" in err and "rationale" in err
+
+
+def test_index_exits_1_on_an_incomplete_index_warning(tmp_path, monkeypatch, capsys):
+    class Fake:
+        def __init__(self, root): pass
+        def close(self): pass
+        def index(self, **kw):
+            return {"warnings": ["reported 3 chunks but the collection holds 2; the index is incomplete, re-run with --full"]}
+
+    assert main(["--root", str(tmp_path), "index"], factory=Fake) == 1
+
+    class Clean(Fake):
+        def index(self, **kw):
+            return {"warnings": ["a.py: skipped (ValueError: x)"]}
+
+    assert main(["--root", str(tmp_path), "index"], factory=Clean) == 0
+
+
+def test_mcp_without_a_manifest_exits_2_with_one_line(tmp_path, capsys):
+    assert main(["--root", str(tmp_path), "mcp"]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("reasonhold:") and len(err.strip().splitlines()) == 1

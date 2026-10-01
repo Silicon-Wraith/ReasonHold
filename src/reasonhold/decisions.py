@@ -31,7 +31,7 @@ def iter_decision_records(decisions_path: Path) -> Iterator[dict]:
     like retractions but record none — and both read through here so there is one
     definition of a well-formed record.
 
-    A malformed line is skipped, not fatal. A decision log that fails to parse
+    A malformed line (or a JSON value that is not an object) is skipped, not fatal. A decision log that fails to parse
     must not take down indexing or a session start.
     """
     if not decisions_path.exists():
@@ -42,9 +42,11 @@ def iter_decision_records(decisions_path: Path) -> Iterator[dict]:
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                record = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(record, dict):
+                yield record
 
 
 PROVENANCE_KINDS = ("human", "agent", "sendesis_run")

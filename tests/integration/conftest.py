@@ -34,7 +34,7 @@ def cleanup(monkeypatch, tmp_path):
     yield
     client = connect()
     try:
-        for name in list_collections(client, "RH_Test"):
+        for name in list_collections(client, "RH_Test_"):
             drop_collection(client, name)
     finally:
         client.close()

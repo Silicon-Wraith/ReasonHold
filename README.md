@@ -54,6 +54,7 @@ Find the resources directory with `python -c "import reasonhold, pathlib; print(
 ## Limits
 
 - Reading a file directly bypasses the retraction overlay. The preamble, `governing_docs` and `retractions_for` are how an agent learns a document is stale.
+- A document listed only in `global.docs` governs paths but is not indexed: it is not searchable, and retractions are not stamped on its chunks. List governing documents in an area's `docs` or in `global.index` too, as `reasonhold init` does with `docs/**/*.md`.
 - Codex and other CLIs are unverified: only Claude Code's SessionStart hook is tested.
 - One embedding model per collection; changing it needs `reasonhold index --full`.
 - Each branch has its own collection; a new branch starts with a full index.
