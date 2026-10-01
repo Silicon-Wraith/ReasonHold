@@ -5,7 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from pathlib import Path
+
+# weaviate-client pulls in authlib, whose import sets its deprecation warning to
+# "always". Import it first, then ignore it, so no command or hook prints it.
+try:
+    from authlib.deprecate import AuthlibDeprecationWarning
+except ImportError:
+    pass
+else:
+    warnings.filterwarnings("ignore", category=AuthlibDeprecationWarning)
 
 from reasonhold.errors import ReasonHoldError
 from reasonhold.governance import SOURCE_SUFFIXES
@@ -109,7 +119,10 @@ def _parser() -> argparse.ArgumentParser:
     cr.add_argument("--note")
     pre = sub.add_parser("preamble")
     pre.add_argument("--format", choices=["text", "claude-hook"], default="text")
-    sub.add_parser("mcp", help="run the stdio MCP server")
+    mcp = sub.add_parser("mcp", help="run the stdio MCP server")
+    mcp.add_argument("--root", type=Path, default=argparse.SUPPRESS, help="repository root to serve")
+    mcp.add_argument("--read-only", action="store_true",
+                     help="register only the query tools (for reading another project's knowledge base)")
     return p
 
 
@@ -168,7 +181,7 @@ def main(argv=None, *, factory=None) -> int:
         from reasonhold.mcp_server import serve
 
         try:
-            serve(root)
+            serve(root, read_only=args.read_only)
         except ReasonHoldError as exc:
             print(f"reasonhold: {exc}", file=sys.stderr)
             return 2

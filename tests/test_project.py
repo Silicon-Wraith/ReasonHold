@@ -2,8 +2,10 @@ import textwrap
 
 import pytest
 
+from helpers import make_repo
 from reasonhold.authority import DEFAULT_LADDER
 from reasonhold.errors import ManifestInvalid
+from reasonhold.lifecycle import corpus_files
 from reasonhold.project import EmbeddingConfig, Project
 from reasonhold.settings import weaviate_settings_from_env
 
@@ -79,6 +81,22 @@ authority:
 def test_corpus_globs_include_the_decision_log(tmp_path):
     write(tmp_path, "sync-doc.yaml", LEGACY)
     assert Project.load(tmp_path).corpus_globs()[-1] == "decisions.jsonl"
+
+
+def test_corpus_includes_documents_listed_only_in_global_docs(tmp_path):
+    p = Project.load(make_repo(tmp_path / "r", commit=False))
+    assert "docs/architecture/overview.md" in p.corpus_globs()
+    assert "docs/architecture/overview.md" in {path.relative_to(p.root).as_posix() for _t, path in corpus_files(p)}
+
+
+def test_package_and_metadata_versions_agree():
+    import tomllib
+    from pathlib import Path
+
+    import reasonhold
+
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    assert reasonhold.__version__ == pyproject["project"]["version"] == "0.1.1"
 
 
 def test_missing_manifest_is_manifest_invalid(tmp_path):

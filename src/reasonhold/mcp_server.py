@@ -1,4 +1,5 @@
-"""The stdio MCP server (R-20). It wraps the facade and exposes AGENT_TOOLS only."""
+"""The stdio MCP server (R-20). It wraps the facade and exposes AGENT_TOOLS only,
+or QUERY_TOOLS only when read-only."""
 
 from __future__ import annotations
 
@@ -7,7 +8,17 @@ from fastmcp import FastMCP
 from reasonhold.api import AGENT_TOOLS, ReasonHold, agent_provenance
 
 
-def instructions(project) -> str:
+def instructions(project, read_only: bool = False) -> str:
+    if read_only:
+        return (
+            f"ReasonHold for project '{project.id}', read-only: what to believe about that repository. "
+            "Use governing_docs(path) and search_decisions(query) to learn its documents and decisions. "
+            "A result's retraction_summary is current truth; the retracted document is stale where they disagree. "
+            "Reading a file directly bypasses the retraction overlay, so check retractions_for(path) before trusting it. "
+            "This knowledge base cannot be written from here: record decisions, proposals and conflicts only in "
+            "the project you are working in. Exact questions (symbols, freshness, coverage) never use vector search "
+            "and refuse to answer 'nothing' from a stale index."
+        )
     return (
         f"ReasonHold for project '{project.id}': what to believe about this repository. "
         "Before designing or changing code, call governing_docs(path) and search_decisions(query). "
@@ -20,8 +31,10 @@ def instructions(project) -> str:
     )
 
 
-def build_server(rh) -> FastMCP:
-    mcp = FastMCP(f"reasonhold-{rh.project.id}", instructions=instructions(rh.project))
+def build_server(rh, read_only: bool = False) -> FastMCP:
+    mcp = FastMCP(f"reasonhold-{rh.project.id}", instructions=instructions(rh.project, read_only))
+    # Write tools are defined unconditionally and registered only when the server may write.
+    write_tool = (lambda fn: fn) if read_only else mcp.tool
 
     @mcp.tool
     def search_docs(query: str, top_k: int = 5) -> dict:
@@ -33,7 +46,7 @@ def build_server(rh) -> FastMCP:
         """Search decision records. status: "active" (default), "superseded" or "all"."""
         return rh.search_decisions(query, top_k, status)
 
-    @mcp.tool
+    @write_tool
     def store_decision(
         topic: str,
         decision: str,
@@ -83,14 +96,14 @@ def build_server(rh) -> FastMCP:
         """Reported conflicts between documents, optionally for one path."""
         return rh.conflicts(path, open_only)
 
-    @mcp.tool
+    @write_tool
     def propose_binding(target: str, reads: list[str], validates_against: list[str], reason: str,
                         provenance: dict | None = None) -> dict:
         """Propose that documents (reads) govern code (validates_against) under a check or area. A human promotes it."""
         return rh.propose_binding(target=target, reads=reads, validates_against=validates_against, reason=reason,
                                   provenance=agent_provenance(provenance, "mcp"))
 
-    @mcp.tool
+    @write_tool
     def report_conflict(doc_a: str, doc_b: str, paths: list[str], claim: str, evidence_a: str, evidence_b: str,
                         provenance: dict | None = None) -> dict:
         """Report two documents that disagree, with the disputed claim and a quote from each."""
@@ -115,9 +128,9 @@ def build_server(rh) -> FastMCP:
     return mcp
 
 
-def serve(root=None) -> None:
+def serve(root=None, read_only: bool = False) -> None:
     rh = ReasonHold(root)
     try:
-        build_server(rh).run()
+        build_server(rh, read_only).run()
     finally:
         rh.close()

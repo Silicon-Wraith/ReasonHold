@@ -21,6 +21,8 @@ AGENT_TOOLS = (
     "retractions_for", "decision", "conflicts", "propose_binding", "report_conflict",
     "symbols", "freshness", "coverage",
 )
+WRITE_TOOLS = ("store_decision", "propose_binding", "report_conflict")
+QUERY_TOOLS = tuple(t for t in AGENT_TOOLS if t not in WRITE_TOOLS)
 
 
 def agent_provenance(provenance: dict | None, actor: str) -> dict:

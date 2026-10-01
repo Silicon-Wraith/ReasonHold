@@ -44,7 +44,7 @@ class Manifest:
 
     def iter_corpus_globs(self, area_names: set[str] | None = None, extra: Sequence[str] = ()) -> list[str]:
         selected_areas = self._select_areas(area_names)
-        globs = list(self.global_index)
+        globs = [*self.global_index, *self.global_docs]
         for area in selected_areas:
             globs.extend(area.docs)
             globs.extend(area.index)
