@@ -133,7 +133,7 @@ class TestSharedParsing:
 
     def test_overlay_still_collapses_by_path(self):
         """index.py's own behaviour must be unchanged by the refactor."""
-        from reasonhold.index import load_retraction_overlay
+        from reasonhold.overlay import load_retraction_overlay
 
         overlay = load_retraction_overlay(FIXTURE)
         assert overlay["docs/architecture/alpha.md"]["retraction_decision"] == "second-retraction-same-path", (

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from reasonhold.index import detect_file_type, index_file, is_binary_file
+from reasonhold.indexer import detect_file_type, index_file, is_binary_file
 from reasonhold.manifest import AreaManifest, Manifest
 
 # Real PDF magic followed by binary. Decodes to ~50% U+FFFD under errors="replace".
@@ -77,36 +77,36 @@ class TestBinaryDetection:
 class TestIndexFileRefusesBinary:
     def test_pdf_produces_no_chunks(self, tmp_path, manifest, monkeypatch):
         """A widened glob must not be able to put mojibake in the index."""
-        import reasonhold.index as index_mod
+        import reasonhold.indexer as index_mod
 
-        monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
         pdf = tmp_path / "fixture.pdf"
         pdf.write_bytes(PDF_BYTES)
 
         count = index_file(
             collection=None,
-            oll_client=None,
+            embedder=None,
             manifest=manifest,
             file_type=detect_file_type(pdf),
             path=pdf,
+            root=tmp_path,
             dry_run=True,
         )
         assert count == 0
 
     def test_markdown_still_indexes(self, tmp_path, manifest, monkeypatch):
         """The guard must not suppress the corpus it exists to protect."""
-        import reasonhold.index as index_mod
+        import reasonhold.indexer as index_mod
 
-        monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
         md = tmp_path / "design.md"
         md.write_text("# Design\n\nThe converter writes markdown to disk.\n", encoding="utf-8")
 
         count = index_file(
             collection=None,
-            oll_client=None,
+            embedder=None,
             manifest=manifest,
             file_type=detect_file_type(md),
             path=md,
+            root=tmp_path,
             dry_run=True,
         )
         assert count > 0

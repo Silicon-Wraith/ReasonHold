@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-import reasonhold.index as index_mod
-from reasonhold.index import index_file
+import reasonhold.indexer as index_mod
+from reasonhold.indexer import index_file
 from reasonhold.manifest import AreaManifest, Manifest
 
 
@@ -90,7 +90,6 @@ def manifest() -> Manifest:
 
 @pytest.fixture
 def doc(tmp_path, monkeypatch) -> Path:
-    monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
     p = tmp_path / "design.md"
     p.write_text(
         "# Design\n\nFirst section body.\n\n## Second\n\nSecond section body.\n\n## Third\n\nThird section body.\n",
@@ -107,7 +106,7 @@ class TestInsertVerification:
     def test_clean_insert_reports_full_count(self, doc, manifest, monkeypatch):
         monkeypatch.setattr(index_mod, "embed_texts", _fake_embed)
         col = FakeCollection([])
-        count = index_file(col, None, manifest, "markdown", doc)
+        count = index_file(col, None, manifest, "markdown", doc, root=doc.parent)
         assert count == col.calls[0]
         assert count > 0
 
@@ -115,7 +114,7 @@ class TestInsertVerification:
         """A transient failure must not silently drop the chunk."""
         monkeypatch.setattr(index_mod, "embed_texts", _fake_embed)
         col = FakeCollection([{0: "context deadline exceeded"}, {}])
-        count = index_file(col, None, manifest, "markdown", doc)
+        count = index_file(col, None, manifest, "markdown", doc, root=doc.parent)
         assert len(col.calls) == 2, "failed objects were not retried"
         assert col.calls[1] == 1, "retry should resend only the failed object"
         assert count == col.calls[0], "all chunks landed after retry"
@@ -124,13 +123,13 @@ class TestInsertVerification:
         """This is the bug: len(objects) was returned regardless of outcome."""
         monkeypatch.setattr(index_mod, "embed_texts", _fake_embed)
         col = FakeCollection([{0: "boom", 1: "boom"}, {0: "boom", 1: "boom"}])
-        count = index_file(col, None, manifest, "markdown", doc)
+        count = index_file(col, None, manifest, "markdown", doc, root=doc.parent)
         assert count == col.calls[0] - 2, f"expected 2 chunks unaccounted for, got count={count}"
 
     def test_persistent_failure_is_reported(self, doc, manifest, monkeypatch, capsys):
         monkeypatch.setattr(index_mod, "embed_texts", _fake_embed)
         col = FakeCollection([{0: "boom"}, {0: "boom"}])
-        index_file(col, None, manifest, "markdown", doc)
+        index_file(col, None, manifest, "markdown", doc, root=doc.parent)
         out = capsys.readouterr().out
         assert "design.md" in out
         assert "boom" in out or "FAILED" in out.upper()
@@ -142,5 +141,5 @@ class TestInsertVerification:
             def _next(self):
                 return {i: "down" for i in range(100)}
 
-        count = index_file(AllFail([]), None, manifest, "markdown", doc)
+        count = index_file(AllFail([]), None, manifest, "markdown", doc, root=doc.parent)
         assert count == 0, "a wholly failed file must not report chunks indexed"

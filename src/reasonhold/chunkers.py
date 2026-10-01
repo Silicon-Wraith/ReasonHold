@@ -668,6 +668,46 @@ def _next_nonempty_line(lines: list[str], start_index: int, end_index: int) -> i
     return None
 
 
+def chunk_pending(text: str, file_path: str) -> list[Chunk]:
+    """One searchable chunk per OPEN candidate binding or conflict. Never a governing document."""
+    from reasonhold.pending import PendingLog
+
+    chunks: list[Chunk] = []
+    for index, record in enumerate(PendingLog.from_text(text).open()):
+        if record["kind"] == "candidate_binding":
+            lines = [
+                f"Candidate binding: {record['target']}",
+                f"Reads: {', '.join(record['reads'])}",
+                f"Validates against: {', '.join(record['validates_against'])}",
+                f"Reason: {record['reason']}",
+            ]
+        else:
+            lines = [
+                f"Conflict: {record['claim']}",
+                f"Between: {record['doc_a']} and {record['doc_b']}",
+                f"Paths: {', '.join(record['paths']) or 'none given'}",
+                f"Evidence A: {record['evidence_a']}",
+                f"Evidence B: {record['evidence_b']}",
+            ]
+        lines.append(f"Id: {record['id']} (open)")
+        chunks.append(
+            {
+                "content": "\n".join(lines),
+                "chunk_type": "pending",
+                "file_type": "pending",
+                "authority_level": "pending",
+                "document_kind": "pending_record",
+                "section_heading": record["id"],
+                "section_path": record["id"],
+                "semantic_label": record["kind"],
+                "record_id": record["id"],
+                "chunk_index": index,
+                "file_path": file_path,
+            }
+        )
+    return chunks
+
+
 CHUNKER_MAP = {
     "markdown": chunk_markdown,
     "python": chunk_python,
@@ -675,4 +715,5 @@ CHUNKER_MAP = {
     "sql": chunk_sql,
     "yaml": chunk_yaml,
     "decisions": chunk_decisions,
+    "pending": chunk_pending,
 }

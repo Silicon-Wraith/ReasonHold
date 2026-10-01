@@ -235,14 +235,16 @@ def chunk_type_inventory(collection) -> dict[str, int]:
 def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
     """Corpus mtimes and the set of 0-byte paths, from one pass over the tree.
 
-    index.py is imported lazily: it pulls in Ollama, Weaviate, and the
+    indexer.py is imported lazily: it pulls in Weaviate and the
     chunkers, none of which the pure helpers above need to be testable.
     """
-    from reasonhold.index import gather_files
+    from reasonhold.config import DECISIONS_FILE, SYNC_DOC_PATH
+    from reasonhold.indexer import gather_files
 
+    globs = load_manifest(SYNC_DOC_PATH).iter_corpus_globs(extra=[DECISIONS_FILE.relative_to(PROJECT_ROOT).as_posix()])
     mtimes: dict[str, datetime] = {}
     empty: set[str] = set()
-    for _file_type, path in gather_files(load_manifest(SYNC_DOC_PATH)):
+    for _file_type, path in gather_files(PROJECT_ROOT, globs, decisions_path=DECISIONS_FILE):
         rel = str(path.relative_to(PROJECT_ROOT))
         stat = path.stat()
         mtimes[rel] = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
@@ -252,7 +254,7 @@ def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
 
 
 def indexed_mtimes(collection) -> dict[str, object]:
-    from reasonhold.index import get_indexed_mtimes
+    from reasonhold.indexer import get_indexed_mtimes
 
     return get_indexed_mtimes(collection)
 

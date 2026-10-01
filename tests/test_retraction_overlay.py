@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from reasonhold.index import load_retraction_overlay, retraction_for_chunk
+from reasonhold.overlay import load_retraction_overlay, retraction_for_chunk
 
 
 def _write_records(tmp_path, records):

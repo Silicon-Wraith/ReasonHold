@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import reasonhold.index as index_mod
+import reasonhold.indexer as index_mod
 import reasonhold.schema as schema_mod
 import weaviate.classes.config as wvc
 

@@ -1,100 +1,44 @@
-#!/usr/bin/env python3
-"""Index project docs and source code into Weaviate for docs-rag."""
+"""Index project docs and source code into Weaviate."""
 
 from __future__ import annotations
 
-import argparse
-import socket
-import time
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-import ollama as ollama_client
 import weaviate
 import weaviate.classes.data as wvd
 import weaviate.classes.query as wvq
+
 from reasonhold.chunkers import CHUNKER_MAP
-
-# Re-exported for callers that still import them from here. iter_decision_records
-# is unused in this module by design — it is part of the public surface, not dead.
-from reasonhold.decisions import iter_decision_records, iter_supersedes_rows  # noqa: F401
 from reasonhold.enrichment import enrich_chunk, render_embedding_text
-from reasonhold.manifest import Manifest, load_manifest
-from reasonhold.store import CollectionMeta, ensure_collection, connect as get_client
+from reasonhold.overlay import retraction_for_chunk
 
-from reasonhold.config import (
-    COLLECTION_NAME,
-    DECISIONS_FILE,
-    EMBEDDING_DIMS,
-    EMBEDDING_BATCH_SIZE,
-    EMBEDDING_CHAR_BUDGET,
-    EMBEDDING_MODEL,
-    EXCLUDED_PATH_PARTS,
-    OLLAMA_HOST,
-    OLLAMA_PORT,
-    PROJECT_ROOT,
-    SYNC_DOC_PATH,
-    WEAVIATE_HOST,
-    WEAVIATE_PORT,
+EXCLUDED_PATH_PARTS = frozenset(
+    {".git", ".venv", "__pycache__", ".pytest_cache", "site-packages", "node_modules", ".ruff_cache", "htmlcov", ".worktrees"}
 )
 
 
-def load_retraction_overlay(decisions_path: Path) -> dict[str, dict]:
-    """Build a retraction-overlay map from the decision log.
-
-    Returns dict keyed by superseded path (optionally with #section).
-    Values carry retraction_summary, retraction_decision, retraction_date.
-    Only active decisions contribute; later decisions win on path collisions.
-    """
-    overlay: dict[str, dict] = {}
-    for date, topic, path, summary in iter_supersedes_rows(decisions_path):
-        overlay[path] = {
-            "retraction_summary": summary,
-            "retraction_decision": topic,
-            "retraction_date": date,
-        }
-    return overlay
+def is_excluded_path(path: Path, root: Path) -> bool:
+    return any(part in EXCLUDED_PATH_PARTS for part in path.relative_to(root).parts)
 
 
-def retraction_for_chunk(chunk: dict, overlay: dict[str, dict]) -> dict | None:
-    """Return the retraction metadata for a chunk if its path (optionally
-    with #section) is superseded. Path-only entries match any chunk from
-    that file; path#section entries match only chunks whose section_heading
-    contains the anchor as a case-insensitive substring after stripping
-    surrounding whitespace. No punctuation normalization is performed."""
-    file_path = chunk.get("file_path", "")
-    if not file_path:
-        return None
-
-    # Exact path match first (doc-wide retraction)
-    if file_path in overlay:
-        return overlay[file_path]
-
-    # Section-level match
-    section_heading = (chunk.get("section_heading") or "").strip().lower()
-    prefix = file_path + "#"
-    for key, value in overlay.items():
-        if not key.startswith(prefix):
-            continue
-        anchor = key[len(prefix) :].strip().lower()
-        # Case-insensitive substring match. Tighten with punctuation
-        # normalization when a real false positive appears (see plan note).
-        if anchor and (anchor == section_heading or anchor in section_heading):
-            return value
-
-    return None
-
-
-def gather_files(manifest: Manifest, area_names: set[str] | None = None) -> list[tuple[str, Path]]:
-    """Resolve manifest corpus globs into unique (file_type, path) pairs."""
+def gather_files(
+    root: Path,
+    globs: Sequence[str],
+    *,
+    decisions_path: Path | None = None,
+    pending_path: Path | None = None,
+) -> list[tuple[str, Path]]:
+    """Resolve corpus globs into unique (file_type, path) pairs. A literal entry
+    naming a missing file yields nothing; `reasonhold check` reports it."""
     files: list[tuple[str, Path]] = []
     seen: set[Path] = set()
-    extra = [str(DECISIONS_FILE.relative_to(PROJECT_ROOT))] if DECISIONS_FILE.exists() else []
-    for pattern in manifest.iter_corpus_globs(area_names, extra=extra):
-        for path in sorted(PROJECT_ROOT.glob(pattern)):
-            if path.is_file() and not is_excluded_path(path) and path not in seen:
+    for pattern in globs:
+        for path in sorted(root.glob(pattern)):
+            if path.is_file() and not is_excluded_path(path, root) and path not in seen:
                 seen.add(path)
-                files.append((detect_file_type(path), path))
+                files.append((detect_file_type(path, decisions_path=decisions_path, pending_path=pending_path), path))
     return files
 
 
@@ -162,15 +106,17 @@ _REPLACEMENT_CHAR = "\ufffd"
 _BINARY_SNIFF_BYTES = 8192
 
 
-def detect_file_type(path: Path) -> str:
+def detect_file_type(path: Path, *, decisions_path: Path | None = None, pending_path: Path | None = None) -> str:
     """Map a path to a chunker key.
 
     Extensionless files (Dockerfile, justfile) legitimately fall through to the
     markdown chunker — they are text. Known-binary suffixes must not: see
     _BINARY_SUFFIXES.
     """
-    if path == DECISIONS_FILE:
+    if decisions_path is not None and path == decisions_path:
         return "decisions"
+    if pending_path is not None and path == pending_path:
+        return "pending"
     suffix = path.suffix.lower()
     if suffix in _BINARY_SUFFIXES:
         return "binary"
@@ -206,10 +152,6 @@ def is_binary_file(path: Path) -> bool:
     return decoded.count(_REPLACEMENT_CHAR) / len(decoded) > _MAX_REPLACEMENT_RATIO
 
 
-def is_excluded_path(path: Path) -> bool:
-    return any(part in EXCLUDED_PATH_PARTS for part in path.parts)
-
-
 def get_indexed_mtimes(collection) -> dict[str, datetime]:
     """Fetch file_path -> max last_modified from Weaviate for incremental checks."""
     mtimes: dict[str, datetime] = {}
@@ -221,18 +163,8 @@ def get_indexed_mtimes(collection) -> dict[str, datetime]:
     return mtimes
 
 
-def embed_texts(
-    oll_client: ollama_client.Client,
-    texts: list[str],
-    batch_size: int = EMBEDDING_BATCH_SIZE,
-) -> list[list[float]]:
-    """Embed texts via Ollama using the configured batch size."""
-    all_embeddings: list[list[float]] = []
-    for index in range(0, len(texts), batch_size):
-        batch = [text[:EMBEDDING_CHAR_BUDGET] for text in texts[index : index + batch_size]]
-        response = oll_client.embed(model=EMBEDDING_MODEL, input=batch)
-        all_embeddings.extend(response["embeddings"])
-    return all_embeddings
+def embed_texts(embedder, texts: list[str]) -> list[list[float]]:
+    return embedder.embed(texts)
 
 
 def delete_file_chunks(collection, file_path: str) -> int:
@@ -253,25 +185,30 @@ def delete_file_chunks(collection, file_path: str) -> int:
 
 def index_file(
     collection,
-    oll_client: ollama_client.Client,
-    manifest: Manifest,
+    embedder,
+    manifest,
     file_type: str,
     path: Path,
+    *,
+    root: Path,
     dry_run: bool = False,
     retraction_overlay: dict[str, dict] | None = None,
+    enrich: Callable[[dict], dict] | None = None,
+    char_budget: int = 12000,
 ) -> int:
     """Chunk, enrich, embed, and upsert a single file."""
-    rel_path = str(path.relative_to(PROJECT_ROOT))
+    rel_path = path.relative_to(root).as_posix()
 
     if file_type == "binary" or is_binary_file(path):
-        print(f"  {rel_path}: SKIPPED (binary content — not indexable as text)")
+        print(f"  {rel_path}: SKIPPED (binary content: not indexable as text)")
         return 0
 
     text = path.read_text(errors="replace")
 
     chunker = CHUNKER_MAP[file_type]
-    chunks = chunker(text, rel_path, EMBEDDING_CHAR_BUDGET) if file_type == "csharp" else chunker(text, rel_path)
-    enriched_chunks = [enrich_chunk(chunk, manifest) for chunk in chunks]
+    chunks = chunker(text, rel_path, char_budget) if file_type == "csharp" else chunker(text, rel_path)
+    enrich = enrich or (lambda c: enrich_chunk(c, manifest))
+    enriched_chunks = [enrich(chunk) for chunk in chunks]
 
     if not enriched_chunks:
         return 0
@@ -280,7 +217,7 @@ def index_file(
         print(f"  {rel_path}: {len(enriched_chunks)} chunks (dry run)")
         return len(enriched_chunks)
 
-    vectors = embed_texts(oll_client, [render_embedding_text(chunk) for chunk in enriched_chunks])
+    vectors = embed_texts(embedder, [render_embedding_text(chunk) for chunk in enriched_chunks])
     mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
 
     objects = []
@@ -304,6 +241,7 @@ def index_file(
             "member_kind": chunk.get("member_kind"),
             "decision_topic": chunk.get("decision_topic"),
             "decision_status": chunk.get("decision_status"),
+            "record_id": chunk.get("record_id"),
             "chunk_index": chunk["chunk_index"],
             "last_modified": mtime.isoformat(),
         }
@@ -371,7 +309,7 @@ def _insert_verified(collection, objects: list, rel_path: str) -> int:
     failed_indices = sorted(result.errors.keys())
     retry = [objects[i] for i in failed_indices if i < len(objects)]
     first_error = result.errors[failed_indices[0]].message
-    print(f"  {rel_path}: {len(retry)} object(s) failed to insert, retrying — {first_error[:160]}")
+    print(f"  {rel_path}: {len(retry)} object(s) failed to insert, retrying: {first_error[:160]}")
 
     if not retry:
         return len(objects)
@@ -382,7 +320,7 @@ def _insert_verified(collection, objects: list, rel_path: str) -> int:
 
     still_failed = len(retry_result.errors)
     message = retry_result.errors[sorted(retry_result.errors.keys())[0]].message
-    print(f"  {rel_path}: INSERT FAILED for {still_failed} object(s) after retry — {message[:160]}")
+    print(f"  {rel_path}: INSERT FAILED for {still_failed} object(s) after retry: {message[:160]}")
     return max(0, len(objects) - still_failed)
 
 
@@ -414,123 +352,3 @@ def clean_orphans(collection, indexed_paths: set[str]) -> int:
             print(f"  Removed {removed} orphaned chunks for {file_path}")
             deleted += removed
     return deleted
-
-
-def verify_prerequisites() -> None:
-    """Fail fast when Ollama or Weaviate are unavailable."""
-    _assert_tcp_connectivity(OLLAMA_HOST, OLLAMA_PORT, "Ollama")
-    _assert_tcp_connectivity(WEAVIATE_HOST, WEAVIATE_PORT, "docs-rag Weaviate")
-
-
-def _assert_tcp_connectivity(host: str, port: int, name: str) -> None:
-    try:
-        with socket.create_connection((host, port), timeout=2):
-            return
-    except OSError as exc:
-        raise RuntimeError(f"{name} is unavailable at {host}:{port}. Start the service and retry.") from exc
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Index project docs for docs-rag")
-    parser.add_argument("--full", action="store_true", help="Force full re-index")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be indexed")
-    parser.add_argument(
-        "--area",
-        action="append",
-        default=[],
-        help="Restrict indexing to one or more sync-doc manifest areas",
-    )
-    args = parser.parse_args()
-
-    manifest = load_manifest(SYNC_DOC_PATH)
-    area_names = set(args.area) if args.area else None
-    files = gather_files(manifest, area_names)
-    print(f"Found {len(files)} files to consider")
-
-    if args.dry_run:
-        # Route through index_file so the dry run exercises the same guards as
-        # a real pass — notably the binary refusal, which a direct
-        # CHUNKER_MAP lookup would bypass (and KeyError on).
-        total = sum(index_file(None, None, manifest, file_type, path, dry_run=True) for file_type, path in files)
-        print(f"\nTotal: {total} chunks (dry run)")
-        return
-
-    verify_prerequisites()
-    oll = ollama_client.Client(host=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}")
-    client = get_client()
-    try:
-        ensure_collection(
-            client,
-            COLLECTION_NAME,
-            CollectionMeta("seed", "seed", "ollama:" + EMBEDDING_MODEL, EMBEDDING_DIMS),
-            recreate=args.full,
-        )
-        collection = client.collections.get(COLLECTION_NAME)
-        indexed_mtimes = {} if args.full else get_indexed_mtimes(collection)
-
-        retraction_overlay = load_retraction_overlay(DECISIONS_FILE)
-        if retraction_overlay:
-            print(f"  Retraction overlay: {len(retraction_overlay)} entries loaded")
-
-        total_chunks = 0
-        indexed_count = 0
-        skipped_count = 0
-        indexed_paths: set[str] = set()
-        start = time.time()
-
-        for file_type, path in files:
-            rel_path = str(path.relative_to(PROJECT_ROOT))
-            indexed_paths.add(rel_path)
-
-            if not args.full and rel_path in indexed_mtimes:
-                file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-                stored_mtime = indexed_mtimes[rel_path]
-                if isinstance(stored_mtime, datetime) and file_mtime <= stored_mtime:
-                    skipped_count += 1
-                    continue
-
-            try:
-                chunk_count = index_file(
-                    collection,
-                    oll,
-                    manifest,
-                    file_type,
-                    path,
-                    retraction_overlay=retraction_overlay,
-                )
-            except Exception as exc:
-                print(f"  {rel_path}: SKIPPED ({type(exc).__name__}: {exc})")
-                continue
-            if chunk_count:
-                print(f"  {rel_path}: {chunk_count} chunks")
-                indexed_count += 1
-                total_chunks += chunk_count
-
-        orphaned = clean_orphans(collection, indexed_paths)
-        elapsed = time.time() - start
-        print(
-            f"\nDone in {elapsed:.1f}s: {indexed_count} files indexed, "
-            f"{skipped_count} skipped, {total_chunks} chunks, {orphaned} orphans removed"
-        )
-
-        # Reconcile what we claim against what the store holds. A full run
-        # should match exactly; anything else means chunks were lost between
-        # here and Weaviate, which is precisely the failure this run must not
-        # report as success.
-        if args.full:
-            stored = collection.aggregate.over_all(total_count=True).total_count
-            if stored != total_chunks:
-                print(
-                    f"WARNING: reported {total_chunks} chunks but the collection holds "
-                    f"{stored} ({total_chunks - stored:+d}). The index is incomplete — "
-                    f"re-run with --full."
-                )
-            else:
-                print(f"Verified: collection holds {stored} chunks, matching the run.")
-    finally:
-        client.close()
-        oll._client.close()
-
-
-if __name__ == "__main__":
-    main()

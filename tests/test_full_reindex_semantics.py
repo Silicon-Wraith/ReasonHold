@@ -25,9 +25,9 @@ from pathlib import Path
 
 import pytest
 
-import reasonhold.index as index_mod
+import reasonhold.indexer as index_mod
 import reasonhold.store as store_mod
-from reasonhold.index import index_file
+from reasonhold.indexer import index_file
 from reasonhold.manifest import AreaManifest, Manifest
 from reasonhold.store import CollectionMeta
 
@@ -142,7 +142,6 @@ def manifest() -> Manifest:
 
 @pytest.fixture
 def doc(tmp_path, monkeypatch) -> Path:
-    monkeypatch.setattr(index_mod, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(index_mod, "embed_texts", lambda c, t, batch_size=8: [[0.1] * 8 for _ in t])
     p = tmp_path / "design.md"
     p.write_text(
@@ -161,14 +160,14 @@ class TestNoDeleteOfWhatWeInsert:
         --full run was in, because --full never emptied the collection.
         """
         col = RecordingCollection()
-        index_file(col, None, manifest, "markdown", doc)
+        index_file(col, None, manifest, "markdown", doc, root=doc.parent)
         first_pass = [u for op, u in col.events if op == "insert"]
         assert first_pass, "fixture produced no chunks"
 
         # Re-index: the store now holds those very UUIDs.
         col.existing = first_pass
         col.events = []
-        index_file(col, None, manifest, "markdown", doc)
+        index_file(col, None, manifest, "markdown", doc, root=doc.parent)
 
         inserted = {u for op, u in col.events if op == "insert"}
         deleted = {u for op, u in col.events if op == "delete"}
@@ -179,7 +178,7 @@ class TestNoDeleteOfWhatWeInsert:
         """Shrinking a file must not leave its old tail chunks behind."""
         stale = "00000000-0000-5000-8000-000000000001"
         col = RecordingCollection(existing_uuids=[stale])
-        index_file(col, None, manifest, "markdown", doc)
+        index_file(col, None, manifest, "markdown", doc, root=doc.parent)
 
         deleted = [u for op, u in col.events if op == "delete"]
         assert stale in deleted, "a chunk no longer produced by the file was not removed"
@@ -187,7 +186,7 @@ class TestNoDeleteOfWhatWeInsert:
     def test_stale_deletion_happens_after_the_insert(self, doc, manifest):
         stale = "00000000-0000-5000-8000-000000000001"
         col = RecordingCollection(existing_uuids=[stale])
-        index_file(col, None, manifest, "markdown", doc)
+        index_file(col, None, manifest, "markdown", doc, root=doc.parent)
 
         ops = [op for op, _ in col.events]
         assert "insert" in ops and "delete" in ops
