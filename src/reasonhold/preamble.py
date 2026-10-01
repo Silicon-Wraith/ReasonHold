@@ -76,7 +76,7 @@ def render_role_a(rows: list[SupersedesRow], max_bytes: int | None = None) -> st
     Rows are dropped, never truncated, when the budget binds. The summary is the
     part a reader acts on — "treat the summary as current truth" — so a shortened
     one is worse than an absent one, because it looks complete. What overflows is
-    signposted to search_decisions instead.
+    signposted to `reasonhold decisions search` instead.
     """
     if not rows:
         return "## Superseded content\n\nNo active supersessions recorded.\n"
@@ -88,29 +88,34 @@ def render_role_a(rows: list[SupersedesRow], max_bytes: int | None = None) -> st
         if not shown:
             return (
                 f"## Superseded content\n\n{len(rows)} active supersessions: too "
-                f"many to list here. Run `search_decisions` before trusting any "
+                f"many to list here. Run `reasonhold decisions search` before trusting any "
                 f"architecture document.\n"
             )
     return _role_a_table(shown, len(rows))
 
 
+ROLE_A_OVERFLOW_HINT = "`reasonhold decisions search` for the rest."
+ROLE_A_HEADER = [
+    "An active decision retracts each path below. Treat the summary as current "
+    "truth and the document as stale where they disagree.",
+    "",
+    "| Path | Now holds | Decision | Date |",
+    "|---|---|---|---|",
+]
+
+
+def _retraction_row(row: SupersedesRow) -> str:
+    return (
+        f"| `{_cell(row.path)}` | {_cell(row.retraction_summary)} "
+        f"| `{_cell(row.topic)}` | {row.date.split('T')[0]} |"
+    )
+
+
 def _role_a_table(shown: list[SupersedesRow], total: int) -> str:
-    lines = [
-        "## Superseded content",
-        "",
-        "An active decision retracts each path below. Treat the summary as current "
-        "truth and the document as stale where they disagree.",
-        "",
-        "| Path | Now holds | Decision | Date |",
-        "|---|---|---|---|",
-    ]
-    for row in shown:
-        lines.append(
-            f"| `{_cell(row.path)}` | {_cell(row.retraction_summary)} "
-            f"| `{_cell(row.topic)}` | {row.date.split('T')[0]} |"
-        )
+    lines = ["## Superseded content", "", *ROLE_A_HEADER]
+    lines.extend(_retraction_row(row) for row in shown)
     if len(shown) < total:
-        lines.append(f"\n*{len(shown)} most recent of {total}. `search_decisions` for the rest.*")
+        lines.append(f"\n*{len(shown)} most recent of {total}. {ROLE_A_OVERFLOW_HINT}*")
     return "\n".join(lines) + "\n"
 
 
@@ -187,11 +192,12 @@ def index_lines(project, *, connect=None, timeout: float = TIMEOUT_INDEX) -> lis
     return result or ["- Index: unavailable"]
 
 
-def _retraction_rows(project) -> list[str]:
-    return [
-        f"| `{_cell(r.path)}` | {_cell(r.retraction_summary)} | `{_cell(r.topic)}` | {r.date.split('T')[0]} |"
-        for r in load_active_supersedes(project.decisions_path)
-    ]
+def _guarded(build) -> list[str]:
+    """One section's rows; a failure becomes one error row, never a lost preamble."""
+    try:
+        return build()
+    except Exception as exc:
+        return [f"- unavailable ({type(exc).__name__}: {exc})"]
 
 
 def render_preamble(
@@ -214,34 +220,35 @@ def render_preamble(
             index = (index_probe or index_lines)(project)
         except Exception as exc:
             index = [f"- Index: unavailable ({type(exc).__name__}: {exc})"]
-        pending = PendingLog.load(project.pending_path)
-        # Filter with the log's own predicate, passed as a value: this module's source must hold no direct file open.
-        open_ids = set(filter(pending.is_open, (r["id"] for r in pending.records)))
-        conflicts = [
-            f"- `{c['id']}` {_cell(c['doc_a'])} vs {_cell(c['doc_b'])}: {_cell(c['claim'])}"
-            for c in reversed([r for r in pending.records if r["kind"] == "conflict" and r["id"] in open_ids])
-        ]
-        candidates = [
-            f"- `{c['id']}` {_cell(c['target'])} <- {_cell(', '.join(c['reads']))} ({_cell(c['reason'])})"
-            for c in reversed([r for r in pending.records if r["kind"] == "candidate_binding" and r["id"] in open_ids])
-        ]
+
+        def retractions() -> list[str]:
+            return [_retraction_row(r) for r in load_active_supersedes(project.decisions_path)]
+
+        def pending_rows(kind: str, fmt) -> list[str]:
+            pending = PendingLog.load(project.pending_path)
+            # Filter with the log's own predicate, passed as a value: this module's source must hold no direct file open.
+            open_ids = set(filter(pending.is_open, (r["id"] for r in pending.records)))
+            return [fmt(r) for r in reversed(pending.records) if r["kind"] == kind and r["id"] in open_ids]
+
+        def conflict_row(c: dict) -> str:
+            return f"- `{c['id']}` {_cell(c['doc_a'])} vs {_cell(c['doc_b'])}: {_cell(c['claim'])}"
+
+        def candidate_row(c: dict) -> str:
+            return f"- `{c['id']}` {_cell(c['target'])} <- {_cell(', '.join(c['reads']))} ({_cell(c['reason'])})"
+
         sections = [
             Section(f"ReasonHold: {project.id}", index, None, ""),
             Section(
                 "Superseded content",
-                _retraction_rows(project),
+                _guarded(retractions),
                 "No active supersessions recorded.",
-                "`reasonhold decisions search` for the rest.",
-                header=[
-                    "An active decision retracts each path below. Treat the summary as current truth "
-                    "and the document as stale where they disagree.",
-                    "",
-                    "| Path | Now holds | Decision | Date |",
-                    "|---|---|---|---|",
-                ],
+                ROLE_A_OVERFLOW_HINT,
+                header=ROLE_A_HEADER,
             ),
-            Section("Open conflicts", conflicts, None, "`reasonhold conflicts` for the rest."),
-            Section("Open candidates", candidates, None, "`reasonhold candidates list` for the rest."),
+            Section("Open conflicts", _guarded(lambda: pending_rows("conflict", conflict_row)), None,
+                    "`reasonhold conflicts` for the rest."),
+            Section("Open candidates", _guarded(lambda: pending_rows("candidate_binding", candidate_row)), None,
+                    "`reasonhold candidates list` for the rest."),
         ]
         return fit(sections, max_lines, max_bytes)
     except Exception as exc:  # the preamble always prints something and always exits 0

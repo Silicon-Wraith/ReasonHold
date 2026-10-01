@@ -19,21 +19,24 @@ overlay built on top of it.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
-from helpers import make_repo
+from helpers import FakeClient, FakeCollection, make_repo
 
 import reasonhold.preamble
 from reasonhold.errors import StoreUnavailable
 from reasonhold.jsonl import append_jsonl
 from reasonhold.pending import make_record
+from reasonhold.project import Project
 from reasonhold.preamble import (
     MAX_PREAMBLE_BYTES,
     MAX_PREAMBLE_LINES,
     TIMEOUT_INDEX,
     SupersedesRow,
     claude_hook_json,
+    index_lines,
     load_active_supersedes,
     render_preamble,
     render_role_a,
@@ -217,3 +220,54 @@ def test_claude_hook_format():
 
 def test_probe_timeout_is_under_the_hook_timeout():
     assert TIMEOUT_INDEX < 20
+
+
+def test_index_lines_times_out_on_a_hung_store(tmp_path):
+    project = Project.load(make_repo(tmp_path, commit=False))
+    start = time.monotonic()
+    out = index_lines(project, connect=lambda: time.sleep(2), timeout=0.2)
+    assert time.monotonic() - start < 1.0
+    assert len(out) == 1 and "unavailable" in out[0]
+
+
+def test_index_lines_reports_a_connect_error(tmp_path):
+    project = Project.load(make_repo(tmp_path, commit=False))
+
+    def boom():
+        raise StoreUnavailable("no route to host")
+
+    out = index_lines(project, connect=boom)
+    assert out == ["- Index: unavailable (StoreUnavailable: no route to host)"]
+
+
+def test_index_lines_missing_index_closes_the_client(tmp_path):
+    project = Project.load(make_repo(tmp_path, commit=False))
+    client = FakeClient()
+    out = index_lines(project, connect=lambda: client)
+    assert "index missing" in out[0]
+    assert client.closed
+
+
+def test_index_lines_stale_lists_causes(tmp_path):
+    project = Project.load(make_repo(tmp_path, commit=False))
+    from reasonhold.lifecycle import index_state
+
+    probe_client = FakeClient()
+    name = index_state(project, probe_client).collection
+    client = FakeClient(FakeCollection(name))      # exists, but carries no ReasonHold metadata
+    out = index_lines(project, connect=lambda: client)
+    assert "stale" in out[0]
+    assert any("no ReasonHold metadata" in ln for ln in out[1:])
+    assert client.closed
+
+
+def test_a_corrupt_pending_log_does_not_cost_the_other_sections(tmp_path, monkeypatch):
+    root = crowded_repo(tmp_path)
+
+    def broken(cls, path):
+        raise ValueError("corrupt pending log")
+
+    monkeypatch.setattr("reasonhold.pending.PendingLog.load", classmethod(broken))
+    out = render_preamble(root, index_probe=fresh_probe, max_lines=1000, max_bytes=100000)
+    assert "fresh" in out and "| `docs/" in out
+    assert out.count("unavailable (ValueError: corrupt pending log)") == 2   # conflicts and candidates
