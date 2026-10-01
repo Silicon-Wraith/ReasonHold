@@ -25,6 +25,9 @@ import weaviate
 import weaviate.classes.query as wvq
 from fastmcp import FastMCP
 
+from reasonhold.decisions import format_decision_content as _format_decision_content
+from reasonhold.decisions import validate_supersedes as _validate_supersedes
+from reasonhold.writes import apply_retraction_to_chunks
 from reasonhold.config import (
     COLLECTION_NAME,
     DECISIONS_FILE,
@@ -51,60 +54,6 @@ def _get_client() -> weaviate.WeaviateClient:
         grpc_port=WEAVIATE_GRPC_PORT,
         grpc_secure=False,
     )
-
-
-def apply_retraction_to_chunks(
-    client: weaviate.WeaviateClient,
-    path: str,
-    retraction_summary: str,
-    retraction_decision: str,
-    retraction_date: str,
-) -> int:
-    """Update retraction_* properties on existing chunks matching `path`.
-
-    If `path` contains '#', the suffix is treated as a section anchor; only
-    chunks whose section_heading contains the anchor text (case-insensitive)
-    are updated. Otherwise every chunk with file_path == path is updated.
-
-    Decision chunks (chunk_type == "decision") are never annotated — a
-    decision does not retract itself.
-
-    Returns the number of chunks updated.
-
-    Performance: iteration is full-collection for portability across Weaviate
-    client versions. Switch to a server-side filtered query via
-    weaviate.classes.query.Filter when collection size makes this measurable.
-    """
-    collection = client.collections.get(COLLECTION_NAME)
-
-    if "#" in path:
-        file_path, _, anchor = path.partition("#")
-        anchor_lower = anchor.strip().lower()
-    else:
-        file_path = path
-        anchor_lower = None
-
-    updated = 0
-    for obj in collection.iterator(include_vector=False):
-        props = obj.properties or {}
-        if props.get("file_path") != file_path:
-            continue
-        if props.get("chunk_type") == "decision":
-            continue
-        if anchor_lower is not None:
-            heading = (props.get("section_heading") or "").strip().lower()
-            if not heading or anchor_lower not in heading:
-                continue
-        collection.data.update(
-            uuid=obj.uuid,
-            properties={
-                "retraction_summary": retraction_summary,
-                "retraction_decision": retraction_decision,
-                "retraction_date": retraction_date,
-            },
-        )
-        updated += 1
-    return updated
 
 
 _ollama = ollama_client.Client(host=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}")
@@ -277,50 +226,6 @@ def _rerank_score(query: str, query_intents: dict[str, float], result: dict) -> 
     return score
 
 
-def _format_decision_content(record: dict) -> str:
-    """Format a decision record into searchable text content."""
-    alternatives = record.get("alternatives_considered", [])
-    alt_str = ", ".join(alternatives) if alternatives else "none"
-    supersedes = record.get("supersedes", []) or []
-
-    lines = [
-        f"Decision: {record.get('decision', '')}",
-        f"Topic: {record.get('topic', '')}",
-        f"Rationale: {record.get('rationale', '')}",
-        f"Alternatives considered: {alt_str}",
-        f"Context: {record.get('session_context', '')}",
-        f"Date: {record.get('datetime', '')}",
-        f"Status: {record.get('status', 'active')}",
-    ]
-    if supersedes:
-        lines.append("Supersedes:")
-        for entry in supersedes:
-            lines.append(f"  - {entry.get('path', '')}: {entry.get('retraction_summary', '')}")
-    return "\n".join(lines)
-
-
-def _validate_supersedes(supersedes: list[dict] | None) -> list[dict]:
-    """Validate the supersedes list. Returns a normalized list.
-
-    Each entry must be a dict with non-empty "path" (str) and
-    "retraction_summary" (str). Raises ValueError on malformed input.
-    """
-    if not supersedes:
-        return []
-    validated: list[dict] = []
-    for i, entry in enumerate(supersedes):
-        if not isinstance(entry, dict):
-            raise ValueError(f"supersedes[{i}] must be a dict, got {type(entry).__name__}")
-        path = entry.get("path")
-        summary = entry.get("retraction_summary")
-        if not isinstance(path, str) or not path.strip():
-            raise ValueError(f"supersedes[{i}].path must be a non-empty string")
-        if not isinstance(summary, str) or not summary.strip():
-            raise ValueError(f"supersedes[{i}].retraction_summary must be a non-empty string")
-        validated.append({"path": path.strip(), "retraction_summary": summary.strip()})
-    return validated
-
-
 @mcp.tool()
 def store_decision(
     topic: str,
@@ -409,7 +314,7 @@ def store_decision(
         if record["status"] == "active":
             for entry in record["supersedes"]:
                 apply_retraction_to_chunks(
-                    client=client,
+                    collection,
                     path=entry["path"],
                     retraction_summary=entry["retraction_summary"],
                     retraction_decision=record["topic"],

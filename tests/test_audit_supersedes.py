@@ -12,12 +12,12 @@ and an ignored check is worse than none because it looks like coverage.
 
 from __future__ import annotations
 
-import reasonhold.audit_supersedes as reasonhold_audit_supersedes
+import reasonhold.audit as reasonhold_audit
 from pathlib import Path
 
 import pytest
 
-from reasonhold.audit_supersedes import find_candidates, render_report
+from reasonhold.audit import find_candidates, render_report
 
 FIXTURE = Path(__file__).parent / "fixtures" / "audit_sample.jsonl"
 
@@ -79,7 +79,7 @@ class TestRenderReport:
 
 class TestDoesNotMutate:
     def test_the_decision_log_is_never_written(self):
-        source = (Path(reasonhold_audit_supersedes.__file__)).read_text()
+        source = (Path(reasonhold_audit.__file__)).read_text()
         for forbidden in ("open(", '"w"', "'w'", "write_text", "unlink"):
             assert forbidden not in source or forbidden == "open(", (
                 f"audit_supersedes.py may modify the decision log: {forbidden}"

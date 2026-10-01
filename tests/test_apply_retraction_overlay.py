@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("weaviate")
 
-from reasonhold.server import apply_retraction_to_chunks
+from reasonhold.writes import apply_retraction_to_chunks
 
 
 @dataclass
@@ -63,7 +63,7 @@ class TestApplyRetractionToChunks:
         ]
         client = _make_client(objs)
         updated = apply_retraction_to_chunks(
-            client=client,
+            client.collections.get("RH_T__main"),
             path="a.md",
             retraction_summary="retracted",
             retraction_decision="topic-t",
@@ -86,7 +86,7 @@ class TestApplyRetractionToChunks:
         client = _make_client(objs)
         assert (
             apply_retraction_to_chunks(
-                client=client,
+                client.collections.get("RH_T__main"),
                 path="b.md",
                 retraction_summary="r",
                 retraction_decision="t",
@@ -103,7 +103,7 @@ class TestApplyRetractionToChunks:
         client = _make_client(objs)
         assert (
             apply_retraction_to_chunks(
-                client=client,
+                client.collections.get("RH_T__main"),
                 path="docs-rag/decisions.jsonl",
                 retraction_summary="r",
                 retraction_decision="t",
@@ -128,7 +128,7 @@ class TestApplyRetractionToChunks:
         ]
         client = _make_client(objs)
         updated = apply_retraction_to_chunks(
-            client=client,
+            client.collections.get("RH_T__main"),
             path="doc.md#3.2",
             retraction_summary="r",
             retraction_decision="t",
@@ -144,7 +144,7 @@ class TestApplyRetractionToChunks:
         client = _make_client(objs)
         assert (
             apply_retraction_to_chunks(
-                client=client,
+                client.collections.get("RH_T__main"),
                 path="doc.md#3.2",
                 retraction_summary="r",
                 retraction_decision="t",

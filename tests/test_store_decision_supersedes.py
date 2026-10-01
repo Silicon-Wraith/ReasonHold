@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from reasonhold.server import _format_decision_content, _validate_supersedes
+from reasonhold.decisions import format_decision_content as _format_decision_content
+from reasonhold.decisions import validate_supersedes as _validate_supersedes
 
 
 class TestValidateSupersedes:

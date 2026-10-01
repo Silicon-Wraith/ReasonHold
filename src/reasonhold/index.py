@@ -17,7 +17,7 @@ from reasonhold.chunkers import CHUNKER_MAP
 
 # Re-exported for callers that still import them from here. iter_decision_records
 # is unused in this module by design — it is part of the public surface, not dead.
-from reasonhold.decisions_io import iter_decision_records, iter_supersedes_rows  # noqa: F401
+from reasonhold.decisions import iter_decision_records, iter_supersedes_rows  # noqa: F401
 from reasonhold.enrichment import enrich_chunk, render_embedding_text
 from reasonhold.manifest import Manifest, load_manifest
 from reasonhold.store import CollectionMeta, ensure_collection, connect as get_client

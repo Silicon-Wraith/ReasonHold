@@ -28,7 +28,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from reasonhold.decisions_io import iter_supersedes_rows
+from reasonhold.decisions import iter_supersedes_rows
 
 from reasonhold.config import DECISIONS_FILE
 

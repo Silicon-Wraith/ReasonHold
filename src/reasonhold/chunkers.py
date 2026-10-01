@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 import yaml
 
+from reasonhold.decisions import DecisionLog, record_id
+
 Chunk = dict[str, object]
 
 HEADING_LABELS = {
@@ -380,6 +382,7 @@ def chunk_decisions(text: str, file_path: str) -> list[Chunk]:
     if not text.strip():
         return []
 
+    log = DecisionLog.from_text(text)
     chunks: list[Chunk] = []
     for index, line in enumerate(text.strip().splitlines()):
         line = line.strip()
@@ -390,6 +393,8 @@ def chunk_decisions(text: str, file_path: str) -> list[Chunk]:
         except json.JSONDecodeError:
             continue
 
+        rid = record_id(record)
+        status = log.status(rid)
         topic = record.get("topic", "unknown")
         alternatives = record.get("alternatives_considered", [])
         tags = record.get("tags", [])
@@ -403,7 +408,7 @@ def chunk_decisions(text: str, file_path: str) -> list[Chunk]:
             f"Context: {record.get('session_context', '')}",
             f"Tags: {', '.join(tags) if tags else 'none'}",
             f"Date: {record.get('datetime', '')}",
-            f"Status: {record.get('status', 'active')}",
+            f"Status: {status}",
         ]
         if supersedes:
             lines.append("Supersedes:")
@@ -420,7 +425,8 @@ def chunk_decisions(text: str, file_path: str) -> list[Chunk]:
                 "section_heading": topic,
                 "section_path": topic,
                 "decision_topic": topic,
-                "decision_status": record.get("status", "active"),
+                "decision_status": status,
+                "record_id": rid,
                 "semantic_label": "decision_record",
                 "chunk_index": index,
                 "file_path": file_path,

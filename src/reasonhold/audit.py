@@ -8,9 +8,9 @@ away from, with nothing to flag it. `/sync-docs` could not catch it either: its
 cross-doc checks compare documents to each other, not to the decision store.
 
 Usage:
-    python docs-rag/audit_supersedes.py           # human-readable report
-    python docs-rag/audit_supersedes.py --json    # machine-readable
-    python docs-rag/audit_supersedes.py --strict  # exit 1 if any candidates
+    python python -m reasonhold.audit           # human-readable report
+    python python -m reasonhold.audit --json    # machine-readable
+    python python -m reasonhold.audit --strict  # exit 1 if any candidates
 
 Read-only. This never writes to the decision log; correcting a record is a
 `store_decision` call a human makes deliberately, not something an audit does.
@@ -41,13 +41,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from reasonhold.decisions_io import iter_decision_records
-
-from reasonhold.config import DECISIONS_FILE
+from reasonhold.decisions import iter_decision_records
 
 # Language that suggests prior documentation stopped being true.
 RETRACTION_WORDS = (
@@ -120,7 +119,7 @@ def _text_of(record: dict) -> str:
     return " ".join(str(p) for p in parts).lower()
 
 
-def find_candidates(decisions_file: Path = DECISIONS_FILE) -> list[Candidate]:
+def find_candidates(decisions_file: Path) -> list[Candidate]:
     """Active decisions using retraction language while recording no supersedes."""
     found: list[Candidate] = []
     for record in iter_decision_records(decisions_file):
@@ -158,7 +157,7 @@ def render_report(candidates: list[Candidate]) -> str:
     lines = [
         f"{len(candidates)} decision(s) use retraction language but record no supersedes.",
         "",
-        "Each may be correct — a decision can change direction without any prior",
+        "Each may be correct: a decision can change direction without any prior",
         "document having asserted otherwise. Review, and where a document IS stale,",
         "record a new decision carrying `supersedes` rather than editing this log.",
         "",
@@ -175,7 +174,8 @@ def main() -> int:
     parser.add_argument("--strict", action="store_true", help="Exit 1 if any candidates")
     args = parser.parse_args()
 
-    candidates = find_candidates()
+    decisions_file = Path(os.environ.get("REASONHOLD_DECISIONS", "decisions.jsonl"))
+    candidates = find_candidates(decisions_file)
     if args.json:
         print(json.dumps([asdict(c) for c in candidates], indent=2))
     else:
