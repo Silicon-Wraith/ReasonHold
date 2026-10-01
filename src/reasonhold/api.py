@@ -16,6 +16,20 @@ from reasonhold.store import connect as store_connect
 from reasonhold.store import read_meta, write_meta
 
 
+AGENT_TOOLS = (
+    "search_docs", "search_decisions", "store_decision", "list_indexed_files", "governing_docs",
+    "retractions_for", "decision", "conflicts", "propose_binding", "report_conflict",
+    "symbols", "freshness", "coverage",
+)
+
+
+def agent_provenance(provenance: dict | None, actor: str) -> dict:
+    merged = {"kind": "agent", "actor": actor, **(provenance or {})}
+    if merged["kind"] == "human":
+        raise ValueError("an agent tool cannot record human provenance; humans use the reasonhold CLI")
+    return merged
+
+
 class ReasonHold:
     def __init__(self, root=None, *, settings=None, connect=None, provider=None):
         self.project = Project.load(root)

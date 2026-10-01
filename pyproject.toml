@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 agno = ["agno>=3.0.11,<3.1"]
-dev = ["pytest>=8", "ollama>=0.4"]  # ollama: seed index.py and server.py only; removed in Task 14
+dev = ["pytest>=8"]
 
 [project.scripts]
 reasonhold = "reasonhold.cli:main"
