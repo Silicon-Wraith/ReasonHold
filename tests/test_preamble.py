@@ -18,12 +18,26 @@ overlay built on top of it.
 
 from __future__ import annotations
 
-import reasonhold.bootstrap as reasonhold_bootstrap
+import json
 from pathlib import Path
 
 import pytest
+from helpers import make_repo
 
-from reasonhold.bootstrap import SupersedesRow, load_active_supersedes, render_role_a
+import reasonhold.preamble
+from reasonhold.errors import StoreUnavailable
+from reasonhold.jsonl import append_jsonl
+from reasonhold.pending import make_record
+from reasonhold.preamble import (
+    MAX_PREAMBLE_BYTES,
+    MAX_PREAMBLE_LINES,
+    TIMEOUT_INDEX,
+    SupersedesRow,
+    claude_hook_json,
+    load_active_supersedes,
+    render_preamble,
+    render_role_a,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "decisions_sample.jsonl"
 
@@ -116,20 +130,12 @@ class TestSharedParsing:
         would be wrong and would have to be relaxed later, which is how a guard
         stops guarding.
         """
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
+        source = (Path(reasonhold.preamble.__file__)).read_text()
         assert "iter_supersedes_rows" in source, "bootstrap.py must reuse index.py's shared supersedes parse"
         assert "open(" not in source, (
             "bootstrap.py opens a file directly; the decisions scan is delegated "
             "to index.py and nothing else here should need file I/O"
         )
-
-    def test_the_guard_tolerates_a_default_argument(self):
-        """Regression: an earlier version of the guard above matched
-        `decisions_file: Path = DECISIONS_FILE)` and failed on correct code.
-        A guard that fires on legitimate use gets relaxed, and then guards nothing.
-        """
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
-        assert "= DECISIONS_FILE" in source, "the default argument is expected here"
 
     def test_overlay_still_collapses_by_path(self):
         """index.py's own behaviour must be unchanged by the refactor."""
@@ -142,100 +148,72 @@ class TestSharedParsing:
         assert "docs/architecture/ghost.md" not in overlay
 
 
-class TestRoleCFreshness:
-    """Orientation, not authority. Cheap to render, cheaper to skip when broken."""
-
-    def test_freshness_comes_from_symbols_not_an_ad_hoc_check(self):
-        """One definition of 'is the index current', shared with /sync-docs."""
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
-        assert "symbols.py" in source and "--freshness" in source
-
-    def test_no_current_focus_file_is_read(self):
-        """Nebulon's preamble reads one; Ariadne has no equivalent and does not invent one."""
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
-        assert "CURRENT_FOCUS" not in source
-
-    def test_recent_decisions_are_capped(self):
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
-        assert "LAST_N_DECISIONS = 15" in source
-
-    def test_recent_commits_are_capped(self):
-        source = (Path(reasonhold_bootstrap.__file__)).read_text()
-        assert "LAST_N_COMMITS = 10" in source
-
-    def test_a_failing_subprocess_degrades_to_one_line(self, monkeypatch):
-        """No gh, no git, no index — the preamble still renders."""
-        import reasonhold.bootstrap as bootstrap
-        monkeypatch.setattr(bootstrap, "_run", lambda *a, **k: (127, "", "not found"))
-        out = bootstrap.render_role_c()
-        assert out, "role C vanished entirely instead of degrading"
-        assert len(out.splitlines()) < 20
-
-    def test_empty_pr_list_renders_no_pr_section(self, monkeypatch):
-        """Ariadne has opened no PRs. An empty section is still noise."""
-        import reasonhold.bootstrap as bootstrap
-        monkeypatch.setattr(bootstrap, "_run", lambda *a, **k: (0, "", ""))
-        assert "Open PRs" not in bootstrap.render_role_c()
+AGENT = {"kind": "agent"}
+LONG = "A retraction summary of the length these actually run to in practice, a sentence or two of prose."
 
 
-class TestPreambleBudget:
-    """The preamble is paid for on every session start, so the cap is a number.
-
-    Calibrated against Nebulon's render, measured at 3,390 bytes / 52 lines. A
-    budget expressed as an intention drifts upward one useful addition at a time,
-    which is why this is a test and not a guideline.
-    """
-
-    MAX_LINES = 60
-    MAX_BYTES = 4096
-
-    def test_full_preamble_is_within_budget(self):
-        import reasonhold.bootstrap as bootstrap
-        out = bootstrap.render_preamble()
-        assert len(out.splitlines()) <= self.MAX_LINES, (
-            f"preamble is {len(out.splitlines())} lines, budget {self.MAX_LINES}"
-        )
-        assert len(out.encode()) <= self.MAX_BYTES, f"preamble is {len(out.encode())} bytes, budget {self.MAX_BYTES}"
-
-    def test_budget_holds_with_a_full_role_a_table(self, monkeypatch):
-        """The worst realistic case: ROLE_A_MAX_ROWS retractions, each verbose."""
-        import reasonhold.bootstrap as bootstrap
-        rows = [
-            bootstrap.SupersedesRow(
-                date="2026-08-19T00:00:00+00:00",
-                topic=f"some-fairly-long-decision-topic-{i}",
-                path=f"docs/architecture/some-document-with-a-long-name-{i}.md",
-                retraction_summary="A retraction summary of the length these "
-                "actually run to in practice, which is a "
-                "sentence or two of real prose.",
-            )
-            for i in range(bootstrap.ROLE_A_MAX_ROWS)
-        ]
-        monkeypatch.setattr(bootstrap, "load_active_supersedes", lambda *a, **k: rows)
-        monkeypatch.setattr(bootstrap, "_run", lambda *a, **k: (0, "", ""))
-        out = bootstrap.render_preamble()
-        assert len(out.encode()) <= self.MAX_BYTES, (
-            f"a full Role A table blows the budget: {len(out.encode())} bytes. "
-            "Lower ROLE_A_MAX_ROWS or truncate summaries."
-        )
+def crowded_repo(tmp_path):
+    root = make_repo(tmp_path, commit=False)
+    with open(root / "decisions.jsonl", "w") as fh:
+        for i in range(40):
+            fh.write(json.dumps({"topic": f"topic-{i:02d}", "decision": "d", "rationale": "r",
+                                 "datetime": f"2026-09-{1 + i % 28:02d}T00:00:{i:02d}+00:00",
+                                 "supersedes": [{"path": f"docs/architecture/long-document-name-{i}.md",
+                                                 "retraction_summary": LONG}]}) + "\n")
+    for i in range(20):
+        append_jsonl(root / "reasonhold.pending.jsonl", make_record("conflict", {
+            "doc_a": f"docs/a{i}.md", "doc_b": f"docs/b{i}.md", "paths": [], "claim": "they disagree about retries",
+            "evidence_a": "a", "evidence_b": "b"}, AGENT, datetime_=f"t{i:02d}"))
+        append_jsonl(root / "reasonhold.pending.jsonl", make_record("candidate_binding", {
+            "target": "worker-contract", "reads": [f"docs/c{i}.md"], "validates_against": ["src/worker/"],
+            "reason": "new spec"}, AGENT, datetime_=f"u{i:02d}"))
+    return root
 
 
-class TestTimeoutBudget:
-    """A hook that outlives its own timeout looks exactly like a hung session start."""
+def fresh_probe(project):
+    return ["- Branch `main`, collection `RH_X__main`: fresh"]
 
-    def test_worst_case_sum_is_under_the_hook_timeout(self):
-        import reasonhold.bootstrap as bootstrap
-        HOOK_TIMEOUT = 20
-        assert bootstrap.TIMEOUT_TOTAL_BUDGET < HOOK_TIMEOUT, (
-            f"worst-case subprocess time {bootstrap.TIMEOUT_TOTAL_BUDGET}s meets or "
-            f"exceeds the {HOOK_TIMEOUT}s hook timeout"
-        )
 
-    def test_and_well_under_the_30s_design_cap(self):
-        import reasonhold.bootstrap as bootstrap
-        assert bootstrap.TIMEOUT_TOTAL_BUDGET < 30
+def within_budget(text):
+    return len(text.splitlines()) <= MAX_PREAMBLE_LINES and len(text.encode()) <= MAX_PREAMBLE_BYTES
 
-    def test_the_network_call_is_the_tightest(self):
-        """gh hits GitHub; the design says the preamble must not block on network."""
-        import reasonhold.bootstrap as bootstrap
-        assert bootstrap.TIMEOUT_GH <= bootstrap.TIMEOUT_FRESHNESS
+
+def test_preamble_fails_open_without_store(tmp_path):
+    root = make_repo(tmp_path, commit=False)
+
+    def down(project):
+        raise StoreUnavailable("cannot reach Weaviate at localhost:8081")
+
+    out = render_preamble(root, index_probe=down)
+    assert "unavailable" in out and "localhost:8081" in out and within_budget(out)
+
+
+def test_preamble_without_a_manifest_is_one_line(tmp_path):
+    out = render_preamble(tmp_path)
+    assert "not configured" in out and len(out.splitlines()) == 1
+
+
+def test_budget_drops_whole_rows_lowest_priority_first(tmp_path):
+    out = render_preamble(crowded_repo(tmp_path), index_probe=fresh_probe)
+    assert within_budget(out)
+    assert "fresh" in out                                    # the index section is never trimmed
+    assert "most recent of 20" in out                        # candidates (and maybe conflicts) were trimmed
+    table_rows = [ln for ln in out.splitlines() if ln.startswith("| `docs/")]
+    assert table_rows and all(ln.endswith("|") for ln in table_rows)   # rows dropped whole, never cut
+    assert out.index("Superseded content") < out.index("Open conflicts") < out.index("Open candidates")
+
+
+def test_retractions_outrank_conflicts_and_candidates(tmp_path):
+    out = render_preamble(crowded_repo(tmp_path), index_probe=fresh_probe, max_bytes=2048)
+    assert len(out.encode()) <= 2048 and "| `docs/" in out
+    assert "0 most recent of 20. `reasonhold candidates list`" in out
+    assert "0 most recent of 20. `reasonhold conflicts`" in out
+
+
+def test_claude_hook_format():
+    payload = json.loads(claude_hook_json("hello"))
+    assert payload == {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "hello"}}
+
+
+def test_probe_timeout_is_under_the_hook_timeout():
+    assert TIMEOUT_INDEX < 20
