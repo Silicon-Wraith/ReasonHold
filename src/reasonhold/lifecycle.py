@@ -189,9 +189,22 @@ def run_index(project, client, provider, *, full=False, dry_run=False, area_name
     if state.branch != state.indexed_branch:
         return IndexReport(state.collection, False, [], dry_run=dry_run,
                            warnings=[f"single-collection mode: `reasonhold index` runs only on {state.indexed_branch}"])
+    curation = []
+    meta0 = state.meta
+    if meta0 and meta0.indexed_commit and state.head:
+        from reasonhold.curation import curate
+        from reasonhold.project import Project
+
+        edits = curate(project, since=meta0.indexed_commit, dry_run=dry_run)
+        curation = [e.as_dict() for e in edits]
+        if edits and not dry_run:
+            project = Project.load(project.root)
+            for e in edits:
+                out(f"  curated: {e.describe()}")
     reasons = (["--full requested"] if full else []) + list(state.rebuild)
     full = bool(reasons)
     report = IndexReport(state.collection, full, reasons, dry_run=dry_run)
+    report.curation = curation
     files = corpus_files(project, area_names)
 
     def enrich(chunk):
