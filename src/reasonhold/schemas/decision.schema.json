@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReasonHold decision record",
+  "type": "object",
+  "required": ["topic", "decision", "datetime"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^dec-[0-9a-f]{12}$"},
+    "topic": {"type": "string", "minLength": 1},
+    "decision": {"type": "string", "minLength": 1},
+    "rationale": {"type": "string"},
+    "alternatives_considered": {"type": "array", "items": {"type": "string"}},
+    "datetime": {"type": "string", "minLength": 1},
+    "session_context": {"type": "string"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "status": {"enum": ["active", "superseded"]},
+    "supersedes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "retraction_summary"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "retraction_summary": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "supersedes_records": {"type": "array", "items": {"type": "string", "pattern": "^dec-[0-9a-f]{12}$"}},
+    "resolves": {"type": "array", "items": {"type": "string", "pattern": "^pen-[0-9a-f]{12}$"}},
+    "provenance": {"$ref": "#/$defs/provenance"}
+  },
+  "$defs": {
+    "provenance": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["human", "agent", "sendesis_run"]},
+        "actor": {"type": "string"},
+        "run_id": {"type": "string"},
+        "role": {"type": "string"}
+      }
+    }
+  }
+}

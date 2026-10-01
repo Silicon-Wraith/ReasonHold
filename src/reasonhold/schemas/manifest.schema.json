@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReasonHold manifest (reasonhold.yaml or legacy sync-doc.yaml)",
+  "type": "object",
+  "required": ["areas"],
+  "$defs": {
+    "paths": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "nonEmptyPaths": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  },
+  "properties": {
+    "global": {
+      "type": "object",
+      "properties": {
+        "checks": {"$ref": "#/$defs/paths"},
+        "docs": {"$ref": "#/$defs/paths"},
+        "archival": {"$ref": "#/$defs/paths"},
+        "index": {"$ref": "#/$defs/paths"}
+      }
+    },
+    "areas": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["projects", "docs", "index"],
+        "properties": {
+          "description": {"type": "string"},
+          "projects": {"$ref": "#/$defs/nonEmptyPaths"},
+          "docs": {"$ref": "#/$defs/nonEmptyPaths"},
+          "index": {"$ref": "#/$defs/nonEmptyPaths"},
+          "checks": {"$ref": "#/$defs/paths"}
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": {"type": "string"},
+          "mode": {"enum": ["index", "fs"]},
+          "reads": {"$ref": "#/$defs/paths"},
+          "validates_against": {"$ref": "#/$defs/paths"}
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "decisions": {"type": "string", "minLength": 1},
+        "pending": {"type": "string", "minLength": 1},
+        "embedding": {
+          "type": "object",
+          "properties": {
+            "provider": {"enum": ["ollama", "openai_compatible"]},
+            "model": {"type": "string"},
+            "base_url": {"type": "string"},
+            "api_key_env": {"type": "string"}
+          }
+        },
+        "index": {"type": "object", "properties": {"branch_isolation": {"type": "boolean"}}}
+      }
+    },
+    "authority": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["level", "paths"],
+        "properties": {
+          "level": {"type": "string", "minLength": 1},
+          "document_kind": {"type": "string"},
+          "paths": {"$ref": "#/$defs/nonEmptyPaths"},
+          "weight": {"type": "number"}
+        }
+      }
+    }
+  }
+}

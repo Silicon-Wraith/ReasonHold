@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReasonHold pending record",
+  "type": "object",
+  "required": ["id", "kind", "datetime", "provenance"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^pen-[0-9a-f]{12}$"},
+    "kind": {"enum": ["candidate_binding", "conflict", "resolution", "path_alias", "curation"]},
+    "datetime": {"type": "string", "minLength": 1},
+    "provenance": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {"kind": {"enum": ["human", "agent", "sendesis_run"]}}
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"kind": {"const": "candidate_binding"}}},
+     "then": {"required": ["target", "reads", "validates_against", "reason"],
+              "properties": {"target": {"type": "string", "minLength": 1},
+                             "reads": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                             "validates_against": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                             "reason": {"type": "string"}}}},
+    {"if": {"properties": {"kind": {"const": "conflict"}}},
+     "then": {"required": ["doc_a", "doc_b", "paths", "claim", "evidence_a", "evidence_b"],
+              "properties": {"paths": {"type": "array", "items": {"type": "string"}}}}},
+    {"if": {"properties": {"kind": {"const": "resolution"}}},
+     "then": {"required": ["resolves", "outcome"],
+              "properties": {"resolves": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+                             "outcome": {"enum": ["promoted", "rejected", "resolved"]}}}},
+    {"if": {"properties": {"kind": {"const": "path_alias"}}},
+     "then": {"required": ["old_path", "new_path"]}},
+    {"if": {"properties": {"kind": {"const": "curation"}}},
+     "then": {"required": ["edit", "cause"]}}
+  ]
+}
