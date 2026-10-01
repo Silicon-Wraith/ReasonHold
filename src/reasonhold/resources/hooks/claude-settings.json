@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {"type": "command", "command": "reasonhold preamble --format claude-hook || true", "timeout": 20}
+        ]
+      }
+    ]
+  }
+}

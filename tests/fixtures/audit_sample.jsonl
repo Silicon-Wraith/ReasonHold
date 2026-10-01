@@ -1,0 +1,6 @@
+{"topic":"replace-fastapi-with-servicestack","datetime":"2026-05-01T00:00:00+00:00","status":"active","decision":"The API layer moves to .NET.","rationale":"r"}
+{"topic":"deprecate-queue-manager","datetime":"2026-05-02T00:00:00+00:00","status":"active","decision":"QueueManager is deprecated.","rationale":"r","supersedes":[]}
+{"topic":"retract-the-old-chunking-adr","datetime":"2026-05-03T00:00:00+00:00","status":"active","decision":"ADR-016 no longer holds.","rationale":"r","supersedes":[{"path":"docs/architecture/design-decisions.md","retraction_summary":"Phase 4 owns Weaviate writes."}]}
+{"topic":"remove-worktree-phase","datetime":"2026-05-04T00:00:00+00:00","status":"active","decision":"The workflow has no setup phase. Nothing previously documented it, so nothing is retracted.","rationale":"Ariadne never adopted worktrees; there is no prior claim to correct."}
+{"topic":"choose-spacy-lg","datetime":"2026-05-05T00:00:00+00:00","status":"active","decision":"Use the lg model.","rationale":"r"}
+{"topic":"kill-the-legacy-path","datetime":"2026-05-06T00:00:00+00:00","status":"superseded","decision":"Old.","rationale":"r"}

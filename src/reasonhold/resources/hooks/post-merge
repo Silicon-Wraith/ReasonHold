@@ -1,0 +1,7 @@
+#!/bin/sh
+# ReasonHold: re-index after a merge. The full re-index rule applies, so a
+# merge always rebuilds this branch's collection. Runs in the background and
+# never blocks or fails the merge.
+command -v reasonhold >/dev/null 2>&1 || exit 0
+( reasonhold index >/dev/null 2>&1 & )
+exit 0
