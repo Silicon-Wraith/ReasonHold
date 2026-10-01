@@ -20,11 +20,12 @@ from reasonhold.chunkers import CHUNKER_MAP
 from reasonhold.decisions_io import iter_decision_records, iter_supersedes_rows  # noqa: F401
 from reasonhold.enrichment import enrich_chunk, render_embedding_text
 from reasonhold.manifest import Manifest, load_manifest
-from reasonhold.schema import ensure_collection, get_client
+from reasonhold.store import CollectionMeta, ensure_collection, connect as get_client
 
 from reasonhold.config import (
     COLLECTION_NAME,
     DECISIONS_FILE,
+    EMBEDDING_DIMS,
     EMBEDDING_BATCH_SIZE,
     EMBEDDING_CHAR_BUDGET,
     EMBEDDING_MODEL,
@@ -458,7 +459,12 @@ def main() -> None:
     oll = ollama_client.Client(host=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}")
     client = get_client()
     try:
-        ensure_collection(client, recreate=args.full)
+        ensure_collection(
+            client,
+            COLLECTION_NAME,
+            CollectionMeta("seed", "seed", "ollama:" + EMBEDDING_MODEL, EMBEDDING_DIMS),
+            recreate=args.full,
+        )
         collection = client.collections.get(COLLECTION_NAME)
         indexed_mtimes = {} if args.full else get_indexed_mtimes(collection)
 

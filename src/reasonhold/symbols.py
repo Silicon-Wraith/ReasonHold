@@ -258,7 +258,7 @@ def indexed_mtimes(collection) -> dict[str, object]:
 
 
 def _open_collection():
-    from reasonhold.schema import get_client
+    from reasonhold.store import connect as get_client
 
     client = get_client()
     return client, client.collections.get(COLLECTION_NAME)

@@ -36,7 +36,7 @@ import weaviate.classes.config as wvc
 
 class TestFilePathTokenization:
     def test_file_path_uses_exact_field_tokenization(self):
-        props = {p.name: p for p in schema_mod._collection_properties()}
+        props = {p.name: p for p in schema_mod.collection_properties()}
         assert "file_path" in props
         assert props["file_path"].tokenization == wvc.Tokenization.FIELD, (
             "file_path is an identifier, not prose — WORD tokenization makes "
@@ -45,7 +45,7 @@ class TestFilePathTokenization:
 
     def test_identifier_properties_are_not_word_tokenized(self):
         """Any property used as an equality key needs exact matching."""
-        props = {p.name: p for p in schema_mod._collection_properties()}
+        props = {p.name: p for p in schema_mod.collection_properties()}
         for name in ("file_path",):
             assert props[name].tokenization != wvc.Tokenization.WORD, name
 

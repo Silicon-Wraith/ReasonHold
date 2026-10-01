@@ -1,15 +1,6 @@
 """Weaviate schema for docs-rag ProjectDoc collection."""
 
-import weaviate
 import weaviate.classes.config as wvc
-
-from reasonhold.config import (
-    COLLECTION_NAME,
-    EMBEDDING_DIMS,
-    WEAVIATE_GRPC_PORT,
-    WEAVIATE_HOST,
-    WEAVIATE_PORT,
-)
 
 EXPECTED_PROPERTIES = {
     "content",
@@ -34,94 +25,18 @@ EXPECTED_PROPERTIES = {
     "retraction_summary",
     "retraction_decision",
     "retraction_date",
+    "record_id",
 }
 
 
-def get_client() -> weaviate.WeaviateClient:
-    return weaviate.connect_to_custom(
-        http_host=WEAVIATE_HOST,
-        http_port=WEAVIATE_PORT,
-        http_secure=False,
-        grpc_host=WEAVIATE_HOST,
-        grpc_port=WEAVIATE_GRPC_PORT,
-        grpc_secure=False,
-    )
-
-
-def create_collection(client: weaviate.WeaviateClient) -> None:
-    client.collections.create(
-        name=COLLECTION_NAME,
-        description="Project documentation and source code chunks for Claude Code RAG.",
-        vectorizer_config=wvc.Configure.Vectorizer.none(),
-        vector_index_config=wvc.Configure.VectorIndex.hnsw(
-            distance_metric=wvc.VectorDistances.COSINE,
-        ),
-        properties=_collection_properties(),
-    )
-    print(f"  {COLLECTION_NAME}: created")
-
-
-def drop_collection(client: weaviate.WeaviateClient) -> None:
-    if client.collections.exists(COLLECTION_NAME):
-        client.collections.delete(COLLECTION_NAME)
-        print(f"  {COLLECTION_NAME}: deleted")
-    else:
-        print(f"  {COLLECTION_NAME}: does not exist, nothing to delete")
-
-
-def collection_matches_expected_schema(client: weaviate.WeaviateClient) -> bool:
-    if not client.collections.exists(COLLECTION_NAME):
+def collection_matches_expected_schema(client, name: str) -> bool:
+    if not client.collections.exists(name):
         return False
-    collection = client.collections.get(COLLECTION_NAME)
-    config = collection.config.get(simple=False)
-    actual = {prop.name for prop in config.properties}
-    if actual != EXPECTED_PROPERTIES:
-        return False
-    # Check vector dimensions match configured embedding model
-    if hasattr(config, "vector_index_config") and config.vector_index_config is not None:
-        # Probe actual stored vector dimensions by reading one object
-        try:
-            for obj in collection.iterator(include_vector=True):
-                if obj.vector and "default" in obj.vector:
-                    stored_dims = len(obj.vector["default"])
-                    if stored_dims != EMBEDDING_DIMS:
-                        print(
-                            f"  {COLLECTION_NAME}: vector dimension mismatch (stored={stored_dims}, configured={EMBEDDING_DIMS})"
-                        )
-                        return False
-                break
-        except Exception:
-            pass
-    return True
+    config = client.collections.get(name).config.get(simple=False)
+    return {prop.name for prop in config.properties} == EXPECTED_PROPERTIES
 
 
-def ensure_collection(client: weaviate.WeaviateClient, recreate: bool = False) -> None:
-    exists = client.collections.exists(COLLECTION_NAME)
-    if not exists:
-        create_collection(client)
-        return
-
-    if recreate:
-        # --full means force a full re-index. A matching schema is not a reason
-        # to keep the data: leaving it in place put every file through
-        # delete-then-insert on the same deterministic UUIDs, and Weaviate's
-        # asynchronous deletes then removed objects the insert had just written.
-        print(f"  {COLLECTION_NAME}: full reindex, recreating collection")
-        drop_collection(client)
-        create_collection(client)
-        return
-
-    if collection_matches_expected_schema(client):
-        print(f"  {COLLECTION_NAME}: schema OK")
-        return
-
-    # Drift on an incremental run is not silently repaired: recreating would
-    # discard the corpus, and indexing into a mismatched schema would produce
-    # chunks that cannot be queried the way the caller expects.
-    raise RuntimeError(f"{COLLECTION_NAME} schema drift detected. Run a full reindex to recreate the collection.")
-
-
-def _collection_properties() -> list[wvc.Property]:
+def collection_properties() -> list[wvc.Property]:
     return [
         wvc.Property(
             name="content",
@@ -280,14 +195,12 @@ def _collection_properties() -> list[wvc.Property]:
             description="Date of the superseding decision.",
             index_filterable=True,
         ),
+        wvc.Property(
+            name="record_id",
+            data_type=wvc.DataType.TEXT,
+            description="Decision or pending record id for record chunks; empty for document and code chunks.",
+            index_searchable=False,
+            index_filterable=True,
+            tokenization=wvc.Tokenization.FIELD,
+        ),
     ]
-
-
-if __name__ == "__main__":
-    client = get_client()
-    try:
-        print("Creating docs-rag schema...")
-        create_collection(client)
-        print("Done.")
-    finally:
-        client.close()

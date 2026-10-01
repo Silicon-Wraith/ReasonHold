@@ -26,9 +26,10 @@ from pathlib import Path
 import pytest
 
 import reasonhold.index as index_mod
-import reasonhold.schema as schema_mod
+import reasonhold.store as store_mod
 from reasonhold.index import index_file
 from reasonhold.manifest import AreaManifest, Manifest
+from reasonhold.store import CollectionMeta
 
 
 class FakeClient:
@@ -49,21 +50,25 @@ class TestFullReindexEmptiesTheCollection:
     def test_full_recreates_even_when_schema_matches(self, monkeypatch):
         """--full means 'force full re-index'. A matching schema is not a reason to skip."""
         calls = []
-        monkeypatch.setattr(schema_mod, "collection_matches_expected_schema", lambda c: True)
-        monkeypatch.setattr(schema_mod, "drop_collection", lambda c: calls.append("drop"))
-        monkeypatch.setattr(schema_mod, "create_collection", lambda c: calls.append("create"))
+        monkeypatch.setattr(store_mod, "collection_matches_expected_schema", lambda c, n: True)
+        monkeypatch.setattr(store_mod, "drop_collection", lambda c, n: calls.append("drop"))
+        monkeypatch.setattr(store_mod, "create_collection", lambda c, n, m: calls.append("create"))
 
-        schema_mod.ensure_collection(FakeClient(exists=True), recreate=True)
+        store_mod.ensure_collection(
+            FakeClient(exists=True), "RH_T__main", CollectionMeta("t", "main", "ollama:m", 4), recreate=True
+        )
 
         assert calls == ["drop", "create"], f"--full did not recreate the collection: {calls}"
 
     def test_non_full_keeps_a_matching_collection(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(schema_mod, "collection_matches_expected_schema", lambda c: True)
-        monkeypatch.setattr(schema_mod, "drop_collection", lambda c: calls.append("drop"))
-        monkeypatch.setattr(schema_mod, "create_collection", lambda c: calls.append("create"))
+        monkeypatch.setattr(store_mod, "collection_matches_expected_schema", lambda c, n: True)
+        monkeypatch.setattr(store_mod, "drop_collection", lambda c, n: calls.append("drop"))
+        monkeypatch.setattr(store_mod, "create_collection", lambda c, n, m: calls.append("create"))
 
-        schema_mod.ensure_collection(FakeClient(exists=True), recreate=False)
+        store_mod.ensure_collection(
+            FakeClient(exists=True), "RH_T__main", CollectionMeta("t", "main", "ollama:m", 4), recreate=False
+        )
 
         assert calls == [], "an incremental run must not drop the collection"
 
