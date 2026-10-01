@@ -165,14 +165,21 @@ def store_decision(
     for rid in retired:
         if log.get(rid) is None:
             raise UnknownRecord(f"supersedes_records names {rid}, which is not in {project.decisions_rel}")
-    resolve_ids = _require_open(project, resolves) if resolves else []
 
     when = datetime_ or datetime.now(UTC).isoformat()
     rid = decision_id(topic, when)
     existing = log.get(rid)
     if existing is not None:
+        # Heal a crash between the decision append and its resolution append.
+        pending = PendingLog.load(project.pending_path)
+        still_open = [p for p in existing.get("resolves") or [] if pending.is_open(p)]
+        if still_open:
+            _append_pending(project, "resolution",
+                            {"resolves": still_open, "outcome": "resolved", "decision_id": rid},
+                            existing.get("provenance") or clean_provenance, when)
         return {"record": existing, "status": log.status(rid), "indexed": True, "annotated_chunks": 0,
                 "warnings": ["already recorded"]}
+    resolve_ids = _require_open(project, resolves) if resolves else []
 
     record = {
         "id": rid,

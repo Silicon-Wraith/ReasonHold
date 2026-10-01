@@ -84,3 +84,34 @@ def test_aliases_follow_chains_and_survive_loops():
     assert follow_alias("a.md", log.aliases()) == "c.md"
     assert log.former_names("c.md") == {"a.md", "b.md", "c.md"}
     assert follow_alias("x.md", {"x.md": "y.md", "y.md": "x.md"}) in {"x.md", "y.md"}
+
+
+def test_retry_after_crash_between_appends_closes_the_conflict(project):
+    from reasonhold.decisions import decision_id
+    from reasonhold.jsonl import append_jsonl
+
+    conflict = report_conflict(project, doc_a="docs/a.md", doc_b="docs/b.md", paths=["src/q.py"],
+                               claim="c", evidence_a="a", evidence_b="b", provenance=AGENT)
+    rid = decision_id("queue", "t1")
+    append_jsonl(project.decisions_path, {"id": rid, "topic": "queue", "decision": "FIFO", "rationale": "r",
+                                          "datetime": "t1", "resolves": [conflict["id"]],
+                                          "provenance": {"kind": "human"}})
+    out = store_decision(project, FakeCollection(), FakeProvider(), topic="queue", decision="FIFO", rationale="r",
+                         resolves=[conflict["id"]], provenance={"kind": "human"}, datetime_="t1")
+    assert out["warnings"] == ["already recorded"]
+    log = PendingLog.load(project.pending_path)
+    assert not log.is_open(conflict["id"])
+    assert log.resolution_for(conflict["id"])["decision_id"] == rid
+    assert len(project.decisions_path.read_text().splitlines()) == 1
+
+
+def test_identical_retry_after_success_appends_nothing(project):
+    conflict = report_conflict(project, doc_a="docs/a.md", doc_b="docs/b.md", paths=[],
+                               claim="c", evidence_a="a", evidence_b="b", provenance=AGENT)
+    kwargs = dict(topic="queue", decision="FIFO", rationale="r", resolves=[conflict["id"]],
+                  provenance={"kind": "human"}, datetime_="t1")
+    store_decision(project, FakeCollection(), FakeProvider(), **kwargs)
+    before = (project.decisions_path.read_text(), project.pending_path.read_text())
+    out = store_decision(project, FakeCollection(), FakeProvider(), **kwargs)
+    assert out["warnings"] == ["already recorded"]
+    assert (project.decisions_path.read_text(), project.pending_path.read_text()) == before
