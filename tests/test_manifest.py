@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from reasonhold.errors import ManifestInvalid
 from reasonhold.manifest import load_manifest
 
 
@@ -61,7 +62,7 @@ class TestManifest:
         """)
         )
 
-        with pytest.raises(ValueError, match="global.index"):
+        with pytest.raises(ManifestInvalid, match="global.index"):
             load_manifest(manifest_path)
 
     def test_fails_when_area_index_missing(self, tmp_path):
@@ -84,7 +85,7 @@ class TestManifest:
         """)
         )
 
-        with pytest.raises(ValueError, match="areas.core.index"):
+        with pytest.raises(ManifestInvalid, match="areas.core.index"):
             load_manifest(manifest_path)
 
     def test_infers_area_from_doc_and_source_paths(self, tmp_path):

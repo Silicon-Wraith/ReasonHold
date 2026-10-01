@@ -3,8 +3,13 @@
 from pathlib import Path
 
 import pytest
-from reasonhold.enrichment import _classify_authority, enrich_chunk, render_embedding_text
+from reasonhold.authority import DEFAULT_LADDER, classify
+from reasonhold.enrichment import enrich_chunk, render_embedding_text
 from reasonhold.manifest import AreaManifest, Manifest
+
+
+def _classify_authority(path):
+    return classify(path, DEFAULT_LADDER, decisions_rel="docs-rag/decisions.jsonl", manifest_rel="sync-doc.yaml")
 
 
 class TestEnrichment:

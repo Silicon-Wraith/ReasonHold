@@ -44,7 +44,7 @@ from pathlib import Path
 
 from reasonhold.manifest import load_manifest
 
-from reasonhold.config import COLLECTION_NAME, PROJECT_ROOT
+from reasonhold.config import COLLECTION_NAME, PROJECT_ROOT, SYNC_DOC_PATH
 
 # Properties a check ever needs. Narrowing the projection keeps whole-corpus
 # passes cheap; content is deliberately absent, since a symbol query wants
@@ -242,7 +242,7 @@ def scan_working_tree() -> tuple[dict[str, datetime], set[str]]:
 
     mtimes: dict[str, datetime] = {}
     empty: set[str] = set()
-    for _file_type, path in gather_files(load_manifest()):
+    for _file_type, path in gather_files(load_manifest(SYNC_DOC_PATH)):
         rel = str(path.relative_to(PROJECT_ROOT))
         stat = path.stat()
         mtimes[rel] = datetime.fromtimestamp(stat.st_mtime, tz=UTC)

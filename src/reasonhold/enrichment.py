@@ -4,23 +4,37 @@ from __future__ import annotations
 
 from pathlib import PurePosixPath
 
+from reasonhold.authority import DEFAULT_LADDER, classify
 from reasonhold.manifest import Manifest
 
 
-def enrich_chunk(chunk: dict[str, object], manifest: Manifest) -> dict[str, object]:
-    """Add normalized metadata used for retrieval and embedding."""
+def enrich_chunk(
+    chunk: dict[str, object],
+    manifest: Manifest,
+    *,
+    ladder=DEFAULT_LADDER,
+    decisions_rel: str | None = "docs-rag/decisions.jsonl",
+    manifest_rel: str | None = "sync-doc.yaml",
+) -> dict[str, object]:
     enriched = dict(chunk)
     file_path = str(enriched["file_path"])
-
-    enriched.setdefault("file_type", _file_type(file_path))
+    enriched.setdefault("file_type", file_type_for(file_path, decisions_rel))
     enriched.setdefault("area", manifest.infer_area(file_path))
     enriched.setdefault("project", manifest.infer_project(file_path))
-
-    authority_level, document_kind = _classify_authority(file_path)
-    enriched.setdefault("authority_level", authority_level)
-    enriched.setdefault("document_kind", document_kind)
-
+    level, kind = classify(file_path, ladder, decisions_rel=decisions_rel, manifest_rel=manifest_rel)
+    enriched.setdefault("authority_level", level)
+    enriched.setdefault("document_kind", kind)
     return enriched
+
+
+def enrich_for_project(chunk: dict[str, object], project) -> dict[str, object]:
+    return enrich_chunk(
+        chunk,
+        project.manifest,
+        ladder=project.ladder,
+        decisions_rel=project.decisions_rel,
+        manifest_rel=project.manifest_rel,
+    )
 
 
 def render_embedding_text(chunk: dict[str, object]) -> str:
@@ -42,85 +56,15 @@ def render_embedding_text(chunk: dict[str, object]) -> str:
     return "\n".join(headers + ["", str(chunk["content"])])
 
 
-# Files at the repo root that carry the container architecture rather than
-# merely configuring a tool. Matched exactly; prefixes are handled below.
-_DEPLOYMENT_ROOT_FILES = {"justfile", "compose.infra.yml", "compose.app.yml", "compose.dev.yml"}
-
-# Directories holding tooling that operates ON the project rather than being
-# the product. Kept distinct from src/ so retrieval can tell them apart.
-_TOOLING_PREFIXES = ("docs-rag/", "devtools/", "scripts/", "benchmarks/")
-
-
-def _classify_authority(file_path: str) -> tuple[str, str]:
-    """Map a repo-relative path to (authority_level, document_kind).
-
-    The ladder mirrors the documentation precedence in AGENTS.md:
-    architecture > specs > plans > src. Reviews and bug investigations are
-    records of what happened, not authority over what should happen, so they
-    rank as "review" rather than sitting on the design ladder at all.
-
-    Order matters — the most specific prefix must be tested first. A path that
-    reaches the generic fallback contributes no ranking signal, so a governed
-    directory arriving there is a bug in this function, not a neutral result.
-    """
-    if file_path == "docs-rag/decisions.jsonl":
-        return "decision", "decision_log"
-    if file_path == "sync-doc.yaml":
-        return "project-manifest", "sync_doc_manifest"
-    if file_path in {"AGENTS.md", "CLAUDE.md"}:
-        return "project-guidance", "project_guidance"
-
-    # Documentation ladder — see the artifact taxonomy in AGENTS.md.
-    if file_path.startswith("docs/architecture/"):
-        return "architecture", "architecture_doc"
-    if file_path.startswith("docs/specs/"):
-        return "implementation-spec", "implementation_spec"
-    if file_path.startswith("docs/plans/"):
-        return "implementation-plan", "implementation_plan"
-    if file_path.startswith("docs/reviews/"):
-        return "review", "review_finding"
-    if file_path.startswith("docs/bugs/"):
-        return "review", "bug_investigation"
-    if file_path.startswith("docs/"):
-        # docs/ root holds operational guides — setup, runbooks, standards.
-        return "reference", "operational_guide"
-
-    # Deployment substrate: the container rearchitecture lives in these files
-    # as much as it does in its design doc.
-    if file_path in _DEPLOYMENT_ROOT_FILES:
-        return "deployment", "deployment_config"
-    if file_path.startswith("Dockerfile") or file_path.startswith("compose."):
-        return "deployment", "deployment_config"
-
-    if file_path.startswith(".claude/skills/"):
-        return "tooling", "skill_definition"
-    if file_path.startswith(_TOOLING_PREFIXES):
-        return "tooling", "tooling_code"
-
-    if file_path.startswith("src/"):
-        return "implementation", "source_code"
-    if file_path.startswith("ui/src/"):
-        return "implementation", "frontend_code"
-    if file_path.startswith("tests/"):
-        return "test", "test_code"
-    if file_path.endswith(".py"):
-        return "tooling", "tooling_code"
-    return "reference", "reference"
-
-
-def _file_type(file_path: str) -> str:
-    if file_path == "docs-rag/decisions.jsonl":
+def file_type_for(file_path: str, decisions_rel: str | None) -> str:
+    if decisions_rel and file_path == decisions_rel:
         return "decisions"
     suffix = PurePosixPath(file_path).suffix.lower()
     return {
-        ".md": "markdown",
-        ".cs": "csharp",
-        ".py": "python",
-        ".sql": "sql",
-        ".yaml": "yaml",
-        ".yml": "yaml",
-        ".jsonl": "jsonl",
+        ".md": "markdown", ".cs": "csharp", ".py": "python", ".sql": "sql",
+        ".yaml": "yaml", ".yml": "yaml", ".jsonl": "jsonl",
     }.get(suffix, "text")
+
 
 
 def _append_header(headers: list[str], label: str, value: object) -> None:

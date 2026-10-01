@@ -32,6 +32,7 @@ from reasonhold.config import (
     OLLAMA_HOST,
     OLLAMA_PORT,
     PROJECT_ROOT,
+    SYNC_DOC_PATH,
     WEAVIATE_HOST,
     WEAVIATE_PORT,
 )
@@ -87,7 +88,8 @@ def gather_files(manifest: Manifest, area_names: set[str] | None = None) -> list
     """Resolve manifest corpus globs into unique (file_type, path) pairs."""
     files: list[tuple[str, Path]] = []
     seen: set[Path] = set()
-    for pattern in manifest.iter_corpus_globs(area_names):
+    extra = [str(DECISIONS_FILE.relative_to(PROJECT_ROOT))] if DECISIONS_FILE.exists() else []
+    for pattern in manifest.iter_corpus_globs(area_names, extra=extra):
         for path in sorted(PROJECT_ROOT.glob(pattern)):
             if path.is_file() and not is_excluded_path(path) and path not in seen:
                 seen.add(path)
@@ -439,7 +441,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    manifest = load_manifest()
+    manifest = load_manifest(SYNC_DOC_PATH)
     area_names = set(args.area) if args.area else None
     files = gather_files(manifest, area_names)
     print(f"Found {len(files)} files to consider")
