@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- Repository `/mnt/ml_storage/dev/projects/ReasonHold`. All work happens in the worktree `/mnt/ml_storage/dev/projects/ReasonHold/.worktrees/m2-package` on branch `m2-package`, created from `design/reasonhold-0.1` (or from `main` if PR #1 has been merged). `.worktrees/` is gitignored.
+- Repository `/mnt/ml_storage/dev/projects/ReasonHold`. All work happens in the worktree `/mnt/ml_storage/dev/projects/ReasonHold/.worktrees/m2-package` on branch `m2-package`, created from `plan/m2-package` (`main` after the merged PR #1, plus this plan). `.worktrees/` is gitignored.
 - Nothing is pushed and nothing is merged by an agent. Pull requests are merged by the operator only.
 - Python `>=3.11`. Virtualenv `.venv` in the worktree, created with `/usr/bin/python3.11`. No global installs.
 - Runtime dependencies exactly: `weaviate-client>=4.20,<5`, `pyyaml>=6`, `ruamel.yaml>=0.18`, `jsonschema>=4.18`, `fastmcp>=3.0,<4`. Extra `agno`: `agno>=3.0.11,<3.1`. Dev: `pytest>=8`, plus `ollama>=0.4` only while seed modules that import the `ollama` client still exist (`index.py`, `server.py`); Task 14 removes it from the dev extra.
@@ -111,8 +111,8 @@ Seed modules that disappear by the end: `config.py` (Task 14, with `server.py`, 
 cd /mnt/ml_storage/dev/projects/ReasonHold
 grep -qx '.worktrees/' .gitignore 2>/dev/null || printf '.worktrees/\n' >> .gitignore
 git add .gitignore && git commit -q -m "Ignore local worktrees" || true
-# Base: design/reasonhold-0.1 while PR #1 is open; main once the operator has merged it.
-git worktree add .worktrees/m2-package -b m2-package design/reasonhold-0.1
+# Base: plan/m2-package (main after PR #1, plus this plan).
+git worktree add .worktrees/m2-package -b m2-package plan/m2-package
 cd .worktrees/m2-package
 printf '.venv/\n__pycache__/\n*.egg-info/\n.pytest_cache/\n' >> .gitignore
 ```
@@ -214,9 +214,10 @@ and replace the `DECISIONS_FILE` line with:
 DECISIONS_FILE = PROJECT_ROOT / os.getenv("REASONHOLD_DECISIONS", "docs-rag/decisions.jsonl")
 ```
 
-4. `bootstrap.py` `render_role_c`: replace the freshness subprocess (which ran `docs-rag/.venv/bin/python symbols.py`) with `[sys.executable, "-m", "reasonhold.symbols", "--freshness"]`.
+4. `bootstrap.py` `render_role_c`: replace the freshness subprocess (which ran `docs-rag/.venv/bin/python symbols.py`) with `[sys.executable, str(Path(__file__).with_name("symbols.py")), "--freshness"]` (a seed test asserts the source names `symbols.py` and `--freshness`).
 5. In every `tests/*.py`: delete `sys.path.insert(0, str(Path(__file__).parent.parent))` (and an `import sys` left unused by it); `from <seed> import ...` becomes `from reasonhold.<seed> import ...`; `import <seed> as <alias>` becomes `import reasonhold.<seed> as <alias>`.
 6. Delete `tests/__init__.py` if present.
+7. Seed tests that read module source as `Path(__file__).parent.parent / "<mod>.py"` (in `test_bootstrap.py`, `test_symbols.py`, `test_audit_supersedes.py`) read `Path(reasonhold.<mod>.__file__)` instead, with `import reasonhold.<mod>` added. Later tasks that move a module (`audit.py` in Task 6, `codeindex.py` in Task 11, `preamble.py` in Task 12) re-point these reads at the new module.
 
 - [ ] **Step 5: Run the parity gate**
 
@@ -798,13 +799,13 @@ def _safe(value: str, label: str) -> str:
 6. `load_manifest(path)`: `path` is required. Read with `yaml.safe_load`; a YAML error raises `ManifestInvalid(f"{path.name}: {exc}")`. Seed validation stays (messages now say the file name instead of `sync-doc.yaml`). Additionally parse:
 
 ```python
-def _optional_string_list(section: dict, key: str, label: str) -> tuple[str, ...]:
+def _optional_string_list(section: dict, key: str, label: str, *, paths: bool = True) -> tuple[str, ...]:
     value = section.get(key)
     if value is None:
         return ()
     if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
         raise ManifestInvalid(f"{label} must be a list of non-empty strings")
-    return tuple(_safe(v, label) for v in value)
+    return tuple(_safe(v, label) for v in value) if paths else tuple(value)
 
 
 def _parse_checks(raw: object, name: str) -> tuple[CheckSpec, ...]:
@@ -832,7 +833,7 @@ def _parse_checks(raw: object, name: str) -> tuple[CheckSpec, ...]:
     return tuple(checks)
 ```
 
-   `global.docs` and `global.archival` use `_optional_string_list`; `global.checks` and `areas.<n>.checks` are optional name lists (not paths, so not passed through `_safe`). `project_raw = data.get("project") or {}` (must be a mapping), `authority_raw = data.get("authority")`.
+   `global.docs` and `global.archival` use `_optional_string_list`; `global.checks` and `areas.<n>.checks` are optional name lists, parsed with `_optional_string_list(..., paths=False)` (names, not paths, so not passed through `_safe`). `project_raw = data.get("project") or {}` (must be a mapping), `authority_raw = data.get("authority")`.
 
 - [ ] **Step 5: Implement `project.py`**
 
@@ -1461,7 +1462,7 @@ def collection_matches_expected_schema(client, name: str) -> bool:
     return {prop.name for prop in config.properties} == EXPECTED_PROPERTIES
 ```
 
-Remove `get_client`, `create_collection`, `drop_collection`, `ensure_collection` and the `__main__` block from `schema.py` (they move to `store.py`). Seed modules that imported `get_client` from `schema` (`index.py`, `symbols.py`) switch to `from reasonhold.store import connect as get_client` until Tasks 9 and 11 replace them; seed `index.py`'s `ensure_collection(client, recreate=...)` call becomes `ensure_collection(client, COLLECTION_NAME, CollectionMeta("seed", "seed", "ollama:" + EMBEDDING_MODEL, EMBEDDING_DIMS), recreate=...)`.
+Remove `get_client`, `create_collection`, `drop_collection`, `ensure_collection` and the `__main__` block from `schema.py` (they move to `store.py`). Delete `schema.py`'s `from reasonhold.config import ...` line; it no longer needs any of those names. Seed modules that imported `get_client` from `schema` (`index.py`, `symbols.py`) switch to `from reasonhold.store import connect as get_client` until Tasks 8 and 11 replace them. In `index.py`, replace `from reasonhold.schema import ensure_collection, get_client` with `from reasonhold.store import CollectionMeta, ensure_collection, connect as get_client`, add `EMBEDDING_DIMS` to its `reasonhold.config` import list, and change its `ensure_collection(client, recreate=...)` call to `ensure_collection(client, COLLECTION_NAME, CollectionMeta("seed", "seed", "ollama:" + EMBEDDING_MODEL, EMBEDDING_DIMS), recreate=...)`. `backfill_decisions.py` still imports the removed schema functions and stays import-broken until Task 8 deletes it; nothing imports it and no test covers it, so leave it.
 
 - [ ] **Step 4: Implement `store.py`**
 
@@ -2472,7 +2473,7 @@ def store_decision(
 
 - `server.py`: delete its `apply_retraction_to_chunks`, `_format_decision_content` and `_validate_supersedes` definitions; add `from reasonhold.decisions import format_decision_content as _format_decision_content, validate_supersedes as _validate_supersedes` and `from reasonhold.writes import apply_retraction_to_chunks`. Its `store_decision` tool calls `apply_retraction_to_chunks(collection, ...)` with `collection = client.collections.get(COLLECTION_NAME)` already in scope. The rest of `server.py` is replaced in Task 14.
 - `index.py` and `bootstrap.py`: `from reasonhold.decisions_io import ...` becomes `from reasonhold.decisions import ...`.
-- `git mv src/reasonhold/audit_supersedes.py src/reasonhold/audit.py`; replace `from reasonhold.config import DECISIONS_FILE` with nothing and make `find_candidates(decisions_file: Path)` and `main()`'s use take the path explicitly (`main` reads `REASONHOLD_DECISIONS` relative to the current directory, default `decisions.jsonl`; Task 13 replaces it with `reasonhold decisions audit`). If a seed test relies on the old default, pass the fixture path explicitly.
+- `git mv src/reasonhold/audit_supersedes.py src/reasonhold/audit.py`; replace `from reasonhold.config import DECISIONS_FILE` with nothing and make `find_candidates(decisions_file: Path)` and `main()`'s use take the path explicitly (`main` reads `REASONHOLD_DECISIONS` relative to the current directory, default `decisions.jsonl`; Task 13 replaces it with `reasonhold decisions audit`). If a seed test relies on the old default, pass the fixture path explicitly. In `audit.py`, replace any em dash in user-facing strings (`render_report`) with a colon or a comma, and point `test_audit_supersedes.py`'s source read at `Path(reasonhold.audit.__file__)`.
 - `tests/test_audit_supersedes.py`: import from `reasonhold.audit`.
 - `tests/test_store_decision_supersedes.py`: `from reasonhold.decisions import format_decision_content as _format_decision_content, validate_supersedes as _validate_supersedes`.
 - `tests/test_apply_retraction_overlay.py`: `from reasonhold.writes import apply_retraction_to_chunks`; every call passes the collection instead of the client: `apply_retraction_to_chunks(client.collections.get("RH_T__main"), ...)` (the fake's `get` ignores the name).
@@ -3465,7 +3466,7 @@ def embed_texts(embedder, texts: list[str]) -> list[list[float]]:
 ```
 
 3. `detect_file_type(path, *, decisions_path=None, pending_path=None)`: the seed's `if path == DECISIONS_FILE` becomes `if decisions_path is not None and path == decisions_path: return "decisions"`, followed by the same test for `pending_path` returning `"pending"`. The rest is unchanged.
-4. `index_file(collection, embedder, manifest, file_type, path, *, root, dry_run=False, retraction_overlay=None, enrich=None, char_budget=12000)`: `rel_path = path.relative_to(root).as_posix()`; `enrich = enrich or (lambda c: enrich_chunk(c, manifest))`; `chunker(text, rel_path, char_budget)` for C#; `vectors = embed_texts(embedder, [render_embedding_text(c) for c in enriched_chunks])`; add `"record_id": chunk.get("record_id")` to the properties. The binary refusal, verified insert, stale-chunk deletion after insert and the retraction annotation are unchanged.
+4. `index_file(collection, embedder, manifest, file_type, path, *, root, dry_run=False, retraction_overlay=None, enrich=None, char_budget=12000)`: `rel_path = path.relative_to(root).as_posix()`; `enrich = enrich or (lambda c: enrich_chunk(c, manifest))`; `chunker(text, rel_path, char_budget)` for C#; `vectors = embed_texts(embedder, [render_embedding_text(c) for c in enriched_chunks])`; add `"record_id": chunk.get("record_id")` to the properties. The binary refusal, verified insert, stale-chunk deletion after insert and the retraction annotation are unchanged. Replace the em dashes in the two printed messages (`SKIPPED (binary content ...)` and `failed to insert, retrying ...`) with a colon; adjust a seed test literal only if it asserts that exact text.
 
 - [ ] **Step 6: Re-point the remaining seed code and tests**
 
@@ -4779,7 +4780,7 @@ def list_indexed_files(collection) -> list[dict]        # seed server.list_index
 def absence_guard(state, report: FreshnessReport | None) -> None   # IndexMissing / IndexStale
 ```
 
-Each `search_docs` hit is the seed's dict plus `record_id`, `kind` (`"code"` when `is_code`, `"decision"`, `"pending"`, else `"document"`) and the retraction fields when present. Each `search_decisions` hit is the seed's parsed dict plus `"id"` (the chunk's `record_id`) and `"status"` (the chunk's `decision_status` property, not text parsed from the content). The status filter is `decision_status == status` on the stored property (R-12); `"all"` applies no status filter; anything else raises `ValueError`.
+Ruling on spec section 5 ("each hit carries any retraction: summary, decision id, date"): chunks keep the seed's `retraction_decision` = decision topic (the schema documents it so, and seed tests pin it); the decision id is available from `retractions_for(path)` and `governing_docs(path)`, which agents call before trusting a document. Each `search_docs` hit is the seed's dict plus `record_id`, `kind` (`"code"` when `is_code`, `"decision"`, `"pending"`, else `"document"`) and the retraction fields when present. Each `search_decisions` hit is the seed's parsed dict plus `"id"` (the chunk's `record_id`) and `"status"` (the chunk's `decision_status` property, not text parsed from the content). The status filter is `decision_status == status` on the stored property (R-12); `"all"` applies no status filter; anything else raises `ValueError`.
 
 Absence rule (spec section 5, Exact): an exact query that finds nothing, against a missing or stale index, raises instead of returning an empty list. `absence_guard` raises `IndexMissing` when `state.exists` is false, and `IndexStale` naming every cause when `state.stale` is non-empty or the freshness report is not clean. A non-empty result is returned with the staleness in the result's index block.
 
@@ -4838,9 +4839,9 @@ def test_search_decisions_filters_on_the_status_property():
     col = VectorCollection([(props, 0.2)])
     (r,) = search_decisions(col, FakeProvider(), "q", status="superseded")
     assert r["id"] == "dec-1" and r["status"] == "superseded"     # the property wins over the text
-    assert "decision_status" in repr(col.calls[0]["filters"])
+    assert [f.target for f in col.calls[0]["filters"].filters] == ["chunk_type", "decision_status"]
     search_decisions(col, FakeProvider(), "q", status="all")
-    assert "decision_status" not in repr(col.calls[1]["filters"])
+    assert col.calls[1]["filters"].target == "chunk_type"
     with pytest.raises(ValueError):
         search_decisions(col, FakeProvider(), "q", status="retired")
 ```
@@ -5064,6 +5065,7 @@ def absence_guard(state, report=None) -> None:
 - [ ] **Step 5: Port the seed tests**
 
 - `tests/test_rerank.py`: `from reasonhold.search import _detect_query_intents, _rerank_docs`. Calls without weights use the default ladder's weights, which Task 2 proved equal to the seed's.
+- `tests/test_enrichment.py`: `TestAuthorityWeightsCoverTheLadder` imports `AUTHORITY_WEIGHTS` from `reasonhold.server`; replace that import with `from reasonhold.authority import DEFAULT_LADDER, level_weights` and `AUTHORITY_WEIGHTS = level_weights(DEFAULT_LADDER)`.
 - `tests/test_symbols.py`: import from `reasonhold.codeindex`; the two source-reading tests read `Path(reasonhold.codeindex.__file__).read_text()` instead of `symbols.py`.
 
 - [ ] **Step 6: Run the tests and the suite**
@@ -5115,7 +5117,7 @@ Sections, in priority order (R-08): **Index** (branch, collection, fresh or the 
 
 In `tests/test_preamble.py` (the moved seed file):
 
-- Import from `reasonhold.preamble`; keep `TestLoadActiveSupersedes`, `TestRenderRoleA` and `TestSharedParsing` (point their source reads at `Path(reasonhold.preamble.__file__)`, and their overlay import at `reasonhold.overlay`).
+- Import from `reasonhold.preamble`; keep `TestLoadActiveSupersedes`, `TestRenderRoleA` and `TestSharedParsing` (point their source reads at `Path(reasonhold.preamble.__file__)`, and their overlay import at `reasonhold.overlay`). `TestSharedParsing` asserts the source contains no `open(`; that is why `render_preamble` filters `pending.records` with `is_open` instead of calling `PendingLog.open`. Replace the em dash in `render_role_a`'s overflow line (after `active supersessions`) with a colon.
 - Delete `TestRoleCFreshness` (the commit and PR lines are gone: the spec's preamble is index state, retractions, conflicts and candidates). If a kept seed test depends on a removed seed internal (a `config` default argument, `_run`), delete that one test and name it in the task report. Replace `TestPreambleBudget` and `TestTimeoutBudget` with:
 
 ```python
@@ -5319,11 +5321,11 @@ def render_preamble(root=None, *, max_lines=MAX_PREAMBLE_LINES, max_bytes=MAX_PR
         pending = PendingLog.load(project.pending_path)
         conflicts = [
             f"- `{c['id']}` {_cell(c['doc_a'])} vs {_cell(c['doc_b'])}: {_cell(c['claim'])}"
-            for c in reversed(pending.open("conflict"))
+            for c in reversed([r for r in pending.records if r["kind"] == "conflict" and pending.is_open(r["id"])])
         ]
         candidates = [
             f"- `{c['id']}` {_cell(c['target'])} <- {_cell(', '.join(c['reads']))} ({_cell(c['reason'])})"
-            for c in reversed(pending.open("candidate_binding"))
+            for c in reversed([r for r in pending.records if r["kind"] == "candidate_binding" and pending.is_open(r["id"])])
         ]
         sections = [
             Section(f"ReasonHold: {project.id}", index, None, ""),
