@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 from reasonhold import __version__
-from reasonhold.errors import SkillsConflict
+from reasonhold.errors import SkillsConflict, SkillsInstallFailed
 
 STAMP = ".reasonhold-version"
 MARKER = ".reasonhold-skill"
@@ -31,11 +31,20 @@ def skills_dir(root: Path | str) -> Path:
 def install(root: Path | str) -> dict:
     target = skills_dir(root)
     skills = packaged_skills()
-    foreign = [s.name for s in skills if (target / s.name).exists() and not (target / s.name / MARKER).is_file()]
+    # is_symlink catches broken links, which exists() reports as absent.
+    foreign = [s.name for s in skills if ((target / s.name).is_symlink() or (target / s.name).exists())
+               and not _owned(target / s.name)]
     if foreign:
         listed = ", ".join(f".claude/skills/{n}" for n in foreign)
         raise SkillsConflict(f"refusing to overwrite {listed}: ReasonHold did not install it; "
                              "move or rename it, then run `reasonhold skills install` again")
+    try:
+        return _write(target, skills)
+    except OSError as exc:
+        raise SkillsInstallFailed(f"could not install the skill pack into {target}: {exc}") from exc
+
+
+def _write(target: Path, skills: list[Path]) -> dict:
     target.mkdir(parents=True, exist_ok=True)
     for skill in skills:
         dest = target / skill.name
@@ -52,9 +61,14 @@ def install(root: Path | str) -> dict:
             "version": __version__, "path": str(target)}
 
 
+def _owned(d: Path) -> bool:
+    """ReasonHold installed d: a real directory (never a symlink) carrying the marker."""
+    return d.is_dir() and not d.is_symlink() and (d / MARKER).is_file()
+
+
 def _marked(target: Path) -> list[Path]:
     """Skill directories ReasonHold installed, by their marker."""
-    return sorted(d for d in target.iterdir() if d.is_dir() and (d / MARKER).is_file()) if target.is_dir() else []
+    return sorted(d for d in target.iterdir() if _owned(d)) if target.is_dir() else []
 
 
 def skills_line(root: Path | str) -> str | None:

@@ -3,7 +3,7 @@ import pytest
 from helpers import make_repo, write
 from reasonhold import __version__
 from reasonhold.cli import main
-from reasonhold.errors import SkillsConflict
+from reasonhold.errors import SkillsConflict, SkillsInstallFailed
 from reasonhold.preamble import render_preamble
 from reasonhold.skills import MARKER, STAMP, install, packaged_skills, skills_line
 
@@ -64,6 +64,44 @@ def test_reinstall_removes_marked_skills_the_pack_no_longer_ships(tmp_path):
     assert out["removed"] == [str(retired)]
     assert not retired.exists()
     assert (unmarked / "SKILL.md").read_text() == "mine"
+
+
+def test_a_symlinked_skill_is_never_treated_as_installed(tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    install(elsewhere)
+    link = tmp_path / ".claude" / "skills" / names()[0]
+    link.parent.mkdir(parents=True)
+    link.symlink_to(elsewhere / ".claude" / "skills" / names()[0], target_is_directory=True)
+    with pytest.raises(SkillsConflict, match="did not install"):
+        install(tmp_path)
+    assert link.is_symlink() and (link / MARKER).is_file()
+
+
+def test_a_broken_symlink_with_a_skill_name_is_refused(tmp_path):
+    link = tmp_path / ".claude" / "skills" / names()[0]
+    link.parent.mkdir(parents=True)
+    link.symlink_to(tmp_path / "gone", target_is_directory=True)
+    with pytest.raises(SkillsConflict, match="did not install"):
+        install(tmp_path)
+    assert link.is_symlink()
+
+
+def test_a_symlinked_retired_skill_is_left_alone(tmp_path):
+    elsewhere = write(tmp_path, f"elsewhere/retired-skill/{MARKER}", "0.1.0\n").parent
+    install(tmp_path)
+    link = tmp_path / ".claude" / "skills" / "retired-skill"
+    link.symlink_to(elsewhere, target_is_directory=True)
+    assert install(tmp_path)["removed"] == []
+    assert link.is_symlink() and (elsewhere / MARKER).is_file()
+
+
+def test_filesystem_failures_become_a_reasonhold_error(tmp_path, capsys):
+    write(tmp_path, ".claude", "a file, not a directory")
+    with pytest.raises(SkillsInstallFailed):
+        install(tmp_path)
+    assert main(["skills", "install", "--root", str(tmp_path)]) == 2
+    err = capsys.readouterr().err
+    assert err.startswith("reasonhold:") and len(err.strip().splitlines()) == 1
 
 
 def test_skills_line_is_silent_where_reasonhold_never_installed_skills(tmp_path):
